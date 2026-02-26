@@ -6,14 +6,18 @@ const VendingMachine = require('../models/vendingMachine')
 const LoginDetail = require('../models/loginDetail')
 const SchoolDetail = require('../models/schoolDetails');
 const GeoLocation = require('../models/geoLocationModel')
-const DispenseHistory = require('../models/dispenseHistory')
+// const DispenseHistory = require('../models/dispenseHistory')
 const StockHistory = require('../models/stockHistory')
 const { addColors } = require("winston/lib/winston/config");
 const NgoSpoc = require('../models/ngoSpocDetails');
-const School = require("../models/schoolDetails");
+// const School = require("../models/schoolDetails");
 const sendsms = require('../config/smsConfig');
 const stateShortCodes = require('../utils/stateCodes');
+const ManualPads = require("../models/manualPadsModel");
+const dayjs = require("dayjs");
+const { School, DispenseHistory } = require("../models");
 
+// First
 exports.handleEvent = async (req, res) => {
     try {
         const { event_type, data } = req.body;
@@ -89,7 +93,7 @@ exports.handleEvent = async (req, res) => {
 
 
 
-            // 🚨 Trigger SMS if stock goes below threshold
+            // ðŸš¨ Trigger SMS if stock goes below threshold
             if (remaingStock < 10) {
                 console.log("printing the remaining stock inside:", remaingStock);
                 const school = await School.findOne({ where: { machineId } });
@@ -183,151 +187,671 @@ exports.handleEvent = async (req, res) => {
     }
 };
 
-
-
-// exports.getDispenseHistory = async (req, res) => {
+// Second
+// exports.handleEvent = async (req, res) => {
 //     try {
-//         const page = parseInt(req.query.page) || 1; // 1-based index
-//         const pageSize = parseInt(req.query.pageSize) || 10;
-//         const offset = (page - 1) * pageSize;
-//         const limit = pageSize;
+//         const { event_type, data } = req.body;
 
-//         // Fetch total count of refilling records
-//         const totalCount = await DispenseHistory.count({
+//         if (!event_type || !data || !data.machineId || data.stock === undefined || data.stock === 0 || data.stock === null) {
+//             return res.status(400).send({
+//                 success: false,
+//                 message: "Please provide all required fields."
+//             });
+//         }
+
+//         const machineIdRec = data.machineId;
+
+//         //checking if that machine exists and installed in school
+//         const vendingMachine = await VendingMachine.findOne({
 //             where: {
-//                 itemsDispensed: { [Op.not]: null }
-//             },
-//         });
-
-//         // Fetch all data from the dispenseHistory table
-//         const filteredDispenseHistory = await DispenseHistory.findAll({
-//             where: {
-//                 itemsDispensed: { [Op.not]: null }
-//             },
-//             order: [['createdAt', 'DESC']],
-//             limit,
-//             offset
-//         });
-
-
-//         for (let machine of filteredDispenseHistory) {
-//             if (machine.machineId) {
-//                 const schoolData = await School.findOne({
-//                     where: {
-//                         machineId: machine.machineId
-//                     }
-//                 });
-//                 if (schoolData) {
-//                     machine.dataValues.school = schoolData.dataValues;
+//                 machineId: machineIdRec,
+//                 status: 'active',
+//                 schoolId: {
+//                     [Op.ne]: null
 //                 }
+//             }
+//         });
+//         if (!vendingMachine) {
+//             return res.status(404).send({
+//                 success: false,
+//                 message: "Vending machine not found or not properly installed/linked to school."
+//             });
+//         }
+
+
+//         // If event_type is 1 (dispense), create a record in the dispenseHistory table
+//         if (event_type === "1") {
+//             const { itemsDispensed } = data;
+//             const { machineId } = data;
+
+//             // Find the machine's stock in the StockHistory table
+//             const stockRecord = await StockHistory.findOne({
+//                 where: { machineId }
+//             });
+
+//             //    console.log(stockRecord.stock, 'stock value');
+
+
+//             if (!stockRecord) {
+//                 return res.status(400).send({
+//                     success: false,
+//                     message: "Stock record not found for the machineId."
+//                 });
+//             }
+
+//             let currentDBStock = stockRecord.stock;
+
+//             if (currentDBStock === data.stock) {
+//                 return res.status(200).send({
+//                     success: true,
+//                     message: "No change in stock. No items dispensed."
+//                 });
+//             }
+
+//             if (currentDBStock === 0 && data.stock > 0) {
+//                 currentDBStock = 50;
+//                 await DispenseHistory.create({
+//                     event_type: 2,
+//                     machineId: machineId,
+//                     stock: 50,
+//                     itemsDispensed: null
+//                 });
+//             }
+
+//             // If machine stock increased → treat as refill cycle
+//             if (currentDBStock < data.stock) {
+//                 console.log("Stock increased — Refill detected.");
+//                 currentDBStock = 50;
+//                 await DispenseHistory.create({
+//                     event_type: 2,
+//                     machineId: machineId,
+//                     stock: 50,
+//                     itemsDispensed: null
+//                 });
+//             }
+
+//             // Check if there is enough stock to dispense
+//             // if (stockRecord.stock < itemsDispensed) {
+//             //     return res.status(400).send({
+//             //         success: false,
+//             //         message: "Not enough stock to dispense."
+//             //     });
+//             // }
+
+//             const remaingStock = data.stock;
+//             const difference = currentDBStock - remaingStock;
+//             let dispenseHistory;
+
+//             if (difference <= 0) {
+//                 console.log("No items dispensed.");
+//             } else if (difference === 1) {
+//                 dispenseHistory = await DispenseHistory.create({
+//                     event_type,
+//                     machineId,
+//                     stock: remaingStock,
+//                     itemsDispensed: 1
+//                 });
+
+//             } else {
+//                 const entries = [];
+//                 const now = new Date();
+
+//                 let stepStock = currentDBStock;
+
+//                 for (let i = 0; i < difference; i++) {
+//                     stepStock -= 1;
+
+//                     const time = new Date(now);
+//                     time.setMinutes(time.getMinutes() - (difference - i - 1));
+
+//                     entries.push({
+//                         event_type,
+//                         machineId,
+//                         stock: stepStock,
+//                         itemsDispensed: 1,
+//                         createdAt: time,
+//                         updatedAt: time
+//                     });
+//                 }
+
+//                 const bulkEntries = await DispenseHistory.bulkCreate(entries, { returning: true });
+//                 dispenseHistory = bulkEntries[bulkEntries.length - 1];
+//             }
+
+
+//             // Insert a new dispense history record
+//             // const dispenseHistory = await DispenseHistory.create({
+//             //     event_type: event_type,
+//             //     machineId: machineId,
+//             //     stock: remaingStock,
+//             //     itemsDispensed: itemsDispensed
+//             // });
+
+//             // Reduce the stock in the StockHistory table after dispense
+//             stockRecord.stock = remaingStock;
+//             await stockRecord.save();
+
+
+//             // 🚨 Trigger SMS if stock goes below threshold
+//             if (remaingStock < 10) {
+//                 const school = await School.findOne({ where: { machineId } });
+
+//                 if (school) {
+//                     const mobileNumbers = [
+//                         school.schoolSpocMobileNo,
+//                         school.ngoSpocMobileNo,
+//                         school.ngoSpocMobileNo2,
+//                         school.ngoCoordinatorMobileNo,
+//                     ];
+//                     await sendsms.sendLowStockAlertSMS(mobileNumbers, machineId);
+//                 } else {
+//                     console.warn(`No school found for machineId ${machineId} while sending SMS alert.`);
+//                 }
+//             }
+
+
+//             return res.status(201).send({
+//                 success: true,
+//                 message: "Dispense history created and stock updated.",
+//                 dispenseHistory
+//             });
+//         }
+
+//         // If event_type is 2 (reload), update the stock in the StockHistory table
+//         if (event_type === "2") {
+//             const { stock } = data;
+//             const { machineId } = data;
+
+//             // Check if the machine already has a stock record
+//             const existingStock = await StockHistory.findOne({
+//                 where: { machineId }
+//             });
+
+//             if (existingStock) {
+//                 // Update the stock if the record exists
+//                 existingStock.stock = stock;
+//                 existingStock.lastUpdatedAt = new Date();
+//                 await existingStock.save();
+
+
+//                 const dispenseHistory = await DispenseHistory.create({
+//                     event_type: event_type,
+//                     machineId: machineId,
+//                     stock: stock,
+//                     itemsDispensed: null
+//                 });
+
+//                 return res.status(201).send({
+//                     success: true,
+//                     message: "Stock reloaded successfully."
+//                 });
+//             } else {
+//                 // If no stock record exists for the machine, insert a new one
+//                 const insertStockResult = await StockHistory.create({
+//                     machineId: machineId,
+//                     stock: stock,
+//                     lastUpdatedAt: new Date()
+//                 });
+
+
+//                 const dispenseHistory = await DispenseHistory.create({
+//                     event_type: event_type,
+//                     machineId: machineId,
+//                     stock: stock,
+//                     itemsDispensed: null
+//                 });
+
+//                 return res.status(201).send({
+//                     success: true,
+//                     message: "New stock record created and stock reloaded.",
+//                     insertStockResult
+//                 });
 //             }
 
 //         }
 
-//         // Check if any data exists after filtering
-//         if (filteredDispenseHistory.length === 0) {
-//             return res.status(404).send({
-//                 success: false,
-//                 message: "No dispense history records with items dispensed found."
-//             });
-//         }
-
-//         // Return the filtered dispense history
-//         return res.status(200).send({
-//             success: true,
-//             data: filteredDispenseHistory,
-//             total: totalCount
+//         // If event_type is not 1 or 2
+//         return res.status(400).send({
+//             success: false,
+//             message: "Invalid event_type provided."
 //         });
 //     } catch (error) {
 //         console.log(error);
-//         return res.status(500).send({
+//         res.status(500).send({
 //             success: false,
-//             message: 'Error retrieving dispense history',
+//             message: 'Error processing the request',
 //             error
 //         });
 //     }
 // };
 
+
+// Third Check If Stock 0
+// exports.handleEvent = async (req, res) => {
+//     try {
+//         const { event_type, data } = req.body;
+
+//          if (!event_type || !data || !data.machineId || data.stock === undefined || data.stock === 0 || data.stock === null) {
+//             return res.status(400).send({
+//                 success: false,
+//                 message: "Please provide all required fields."
+//             });
+//         }
+
+//         const machineIdRec = data.machineId;
+
+//         //checking if that machine exists and installed in school
+//         const vendingMachine = await VendingMachine.findOne({
+//             where: {
+//                 machineId: machineIdRec,
+//                 status: 'active',
+//                 schoolId: {
+//                     [Op.ne]: null
+//                 }
+//             }
+//         });
+//         if (!vendingMachine) {
+//             return res.status(404).send({
+//                 success: false,
+//                 message: "Vending machine not found or not properly installed/linked to school."
+//             });
+//         }
+
+
+//         // If event_type is 1 (dispense), create a record in the dispenseHistory table
+//         if (event_type === "1") {
+//             const { itemsDispensed } = data;
+//             const { machineId } = data;
+
+//             // Find the machine's stock in the StockHistory table
+//             const stockRecord = await StockHistory.findOne({
+//                 where: { machineId }
+//             });
+
+//             if (!stockRecord) {
+//                 return res.status(400).send({
+//                     success: false,
+//                     message: "Stock record not found for the machineId."
+//                 });
+//             }
+
+//             let currentDBStock = stockRecord.stock;
+
+//              if (currentDBStock === data.stock) {
+//                 return res.status(200).send({
+//                     success: true,
+//                     message: "No change in stock. No items dispensed."
+//                 });
+//             }
+
+//             if (currentDBStock === 0 && data.stock > 0) {
+//                 currentDBStock = 50;
+//             }
+
+//             // Check if there is enough stock to dispense
+//             // if (stockRecord.stock < itemsDispensed) {
+//             //     return res.status(400).send({
+//             //         success: false,
+//             //         message: "Not enough stock to dispense."
+//             //     });
+//             // }
+
+//             const remaingStock = data.stock;
+//             const difference = currentDBStock - remaingStock;
+//             let dispenseHistory;
+
+//             if (difference <= 0) {
+//                 console.log("No items dispensed.");
+//             } else if (difference === 1) {
+//                 dispenseHistory = await DispenseHistory.create({
+//                     event_type,
+//                     machineId,
+//                     stock: remaingStock,
+//                     itemsDispensed: 1
+//                 });
+
+//             } else {
+//                 const entries = [];
+//                 const now = new Date();
+
+//                 let stepStock = currentDBStock;
+
+//                 for (let i = 0; i < difference; i++) {
+//                     stepStock -= 1;
+
+//                     const time = new Date(now);
+//                     time.setMinutes(time.getMinutes() - (difference - i - 1));
+
+//                     entries.push({
+//                         event_type,
+//                         machineId,
+//                         stock: stepStock,
+//                         itemsDispensed: 1,
+//                         createdAt: time,
+//                         updatedAt: time
+//                     });
+//                 }
+
+//                 const bulkEntries = await DispenseHistory.bulkCreate(entries, { returning: true });
+//                 dispenseHistory = bulkEntries[bulkEntries.length - 1];
+//             }
+
+
+//             // Insert a new dispense history record
+//             // const dispenseHistory = await DispenseHistory.create({
+//             //     event_type: event_type,
+//             //     machineId: machineId,
+//             //     stock: remaingStock,
+//             //     itemsDispensed: itemsDispensed
+//             // });
+
+//             // Reduce the stock in the StockHistory table after dispense
+//             stockRecord.stock = remaingStock;
+//             await stockRecord.save();
+
+
+//             // 🚨 Trigger SMS if stock goes below threshold
+//             if (remaingStock < 10) {
+//                 const school = await School.findOne({ where: { machineId } });
+
+//                 if (school) {
+//                     const mobileNumbers = [
+//                         school.schoolSpocMobileNo,
+//                         school.ngoSpocMobileNo,
+//                         school.ngoSpocMobileNo2,
+//                         school.ngoCoordinatorMobileNo,
+//                     ];
+//                     await sendsms.sendLowStockAlertSMS(mobileNumbers, machineId);
+//                 } else {
+//                     console.warn(`No school found for machineId ${machineId} while sending SMS alert.`);
+//                 }
+//             }
+
+
+//             return res.status(201).send({
+//                 success: true,
+//                 message: "Dispense history created and stock updated.",
+//                 dispenseHistory
+//             });
+//         }
+
+//         // If event_type is 2 (reload), update the stock in the StockHistory table
+//         if (event_type === "2") {
+//             const { stock } = data;
+//             const { machineId } = data;
+
+//             // Check if the machine already has a stock record
+//             const existingStock = await StockHistory.findOne({
+//                 where: { machineId }
+//             });
+
+//             if (existingStock) {
+//                 // Update the stock if the record exists
+//                 existingStock.stock = stock;
+//                 existingStock.lastUpdatedAt = new Date();
+//                 await existingStock.save();
+
+
+//                 const dispenseHistory = await DispenseHistory.create({
+//                     event_type: event_type,
+//                     machineId: machineId,
+//                     stock: stock,
+//                     itemsDispensed: null
+//                 });
+
+//                 return res.status(201).send({
+//                     success: true,
+//                     message: "Stock reloaded successfully."
+//                 });
+//             } else {
+//                 // If no stock record exists for the machine, insert a new one
+//                 const insertStockResult = await StockHistory.create({
+//                     machineId: machineId,
+//                     stock: stock,
+//                     lastUpdatedAt: new Date()
+//                 });
+
+
+//                 const dispenseHistory = await DispenseHistory.create({
+//                     event_type: event_type,
+//                     machineId: machineId,
+//                     stock: stock,
+//                     itemsDispensed: null
+//                 });
+
+//                 return res.status(201).send({
+//                     success: true,
+//                     message: "New stock record created and stock reloaded.",
+//                     insertStockResult
+//                 });
+//             }
+
+//         }
+
+//         // If event_type is not 1 or 2
+//         return res.status(400).send({
+//             success: false,
+//             message: "Invalid event_type provided."
+//         });
+//     } catch (error) {
+//         console.log(error);
+//         res.status(500).send({
+//             success: false,
+//             message: 'Error processing the request',
+//             error
+//         });
+//     }
+// };
+
+// Last Updated
+// exports.handleEvent = async (req, res) => {
+//     try {
+//         const { event_type, data } = req.body;
+
+//         if (!event_type || !data || !data.machineId || data.stock === undefined || data.stock === null) {
+//             return res.status(400).send({
+//                 success: false,
+//                 message: "Please provide all required fields."
+//             });
+//         }
+
+//         const { machineId, stock: newStock } = data;
+
+//         // ✅ Check vending machine
+//         const vendingMachine = await VendingMachine.findOne({
+//             where: {
+//                 machineId,
+//                 status: "active",
+//                 schoolId: { [Op.ne]: null }
+//             }
+//         });
+
+//         if (!vendingMachine) {
+//             return res.status(404).send({
+//                 success: false,
+//                 message: "Vending machine not found or not linked to a school."
+//             });
+//         }
+
+//         // ✅ DISPENSE EVENT
+//         if (event_type === "1") {
+//             const stockRecord = await StockHistory.findOne({ where: { machineId } });
+//             if (!stockRecord) {
+//                 return res.status(400).send({
+//                     success: false,
+//                     message: "Stock record not found for this machine."
+//                 });
+//             }
+
+//             let currentDBStock = stockRecord.stock;
+//             const remainingStock = newStock;
+//             const entries = [];
+//             let dispenseHistory;
+
+//             if (currentDBStock === remainingStock) {
+//                 return res.status(200).send({
+//                     success: true,
+//                     message: "No change in stock. No dispense recorded."
+//                 });
+//             }
+
+//             // 🧠 CASE 1: Normal dispense (stock decreases normally)
+//             if (remainingStock < currentDBStock) {
+//                 const difference = currentDBStock - remainingStock;
+//                 let stepStock = currentDBStock;
+//                 const now = new Date();
+
+//                 for (let i = 0; i < difference; i++) {
+//                     stepStock -= 1;
+//                     const time = new Date(now);
+//                     time.setMinutes(time.getMinutes() - (difference - i - 1));
+//                     entries.push({
+//                         event_type: 1,
+//                         machineId,
+//                         stock: stepStock,
+//                         itemsDispensed: 1,
+//                         createdAt: time,
+//                         updatedAt: time
+//                     });
+//                 }
+//             }
+
+//             // 🧠 CASE 2: Stock increased (refill scenario)
+//             if (remainingStock > currentDBStock) {
+//                 // console.log(`Refill pattern detected: ${currentDBStock} → ${remainingStock}`);
+
+//                 // 1️⃣ Go down to 1 (simulate last dispenses before refill)
+//                 if (currentDBStock > 0) {
+//                     for (let s = currentDBStock - 1; s >= 1; s--) {
+//                         entries.push({
+//                             event_type: 1,
+//                             machineId,
+//                             stock: s,
+//                             itemsDispensed: 1,
+//                             createdAt: new Date(),
+//                             updatedAt: new Date()
+//                         });
+//                     }
+//                 }
+
+//                 // 2️⃣ Refill entry at 50
+//                 entries.push({
+//                     event_type: 2,
+//                     machineId,
+//                     stock: 50,
+//                     itemsDispensed: null,
+//                     createdAt: new Date(),
+//                     updatedAt: new Date()
+//                 });
+
+//                 // 3️⃣ Dispense from 50 down to newStock (e.g. 50→49→48→...→47)
+//                 for (let s = 49; s >= remainingStock; s--) {
+//                     entries.push({
+//                         event_type: 1,
+//                         machineId,
+//                         stock: s,
+//                         itemsDispensed: 1,
+//                         createdAt: new Date(),
+//                         updatedAt: new Date()
+//                     });
+//                 }
+//             }
+
+//             // ✅ Save entries
+//             if (entries.length > 0) {
+//                 dispenseHistory = await DispenseHistory.bulkCreate(entries, { returning: true });
+//             }
+
+//             // ✅ Update stock record
+//             stockRecord.stock = remainingStock;
+//             await stockRecord.save();
+
+//             // ✅ Send low stock alert if below threshold
+//             if (remainingStock < 10) {
+//                 const school = await School.findOne({ where: { machineId } });
+//                 if (school) {
+//                     const mobileNumbers = [
+//                         school.schoolSpocMobileNo,
+//                         school.ngoSpocMobileNo,
+//                         school.ngoSpocMobileNo2,
+//                         school.ngoCoordinatorMobileNo
+//                     ];
+//                     await sendsms.sendLowStockAlertSMS(mobileNumbers, machineId);
+//                 }
+//             }
+
+//             return res.status(201).send({
+//                 success: true,
+//                 message: "Dispense/refill history created successfully.",
+//                 dispenseHistory
+//             });
+//         }
+
+//         // ✅ REFILL EVENT
+//         if (event_type === "2") {
+//             const existingStock = await StockHistory.findOne({ where: { machineId } });
+//             if (existingStock) {
+//                 existingStock.stock = newStock;
+//                 existingStock.lastUpdatedAt = new Date();
+//                 await existingStock.save();
+//             } else {
+//                 await StockHistory.create({
+//                     machineId,
+//                     stock: newStock,
+//                     lastUpdatedAt: new Date()
+//                 });
+//             }
+
+//             await DispenseHistory.create({
+//                 event_type: 2,
+//                 machineId,
+//                 stock: newStock,
+//                 itemsDispensed: null
+//             });
+
+//             return res.status(201).send({
+//                 success: true,
+//                 message: "Stock reloaded successfully."
+//             });
+//         }
+
+//         // 🚫 INVALID EVENT TYPE
+//         return res.status(400).send({
+//             success: false,
+//             message: "Invalid event_type provided."
+//         });
+
+//     } catch (error) {
+//         console.error(error);
+//         res.status(500).send({
+//             success: false,
+//             message: "Error processing request",
+//             error
+//         });
+//     }
+// };
+
+
 exports.getDispenseHistory = async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1; // 1-based index
-        const pageSize = parseInt(req.query.pageSize) || 10;
+        const pageSize = parseInt(req.query.pageSize) || 100;
         const offset = (page - 1) * pageSize;
-        const limit = pageSize;
 
-        const { startDate, endDate } = req.query; // Get dates from query
+        const { startDate, endDate, filters } = req.query;
 
-        // Build where clause
-        const whereClause = {
-            itemsDispensed: { [Op.not]: null }
-        };
-
-        // Add date filter if both startDate and endDate are provided
-        if (startDate && endDate) {
-            whereClause.createdAt = {
-                [Op.between]: [new Date(startDate), new Date(endDate)]
-            };
-        }
-
-        // Fetch total count of refilling records
-        const totalCount = await DispenseHistory.count({ where: whereClause });
-
-        // Fetch filtered data with pagination
-        const filteredDispenseHistory = await DispenseHistory.findAll({
-            where: whereClause,
-            order: [['createdAt', 'DESC']],
-            limit,
-            offset
-        });
-
-        // Attach school data
-        for (let machine of filteredDispenseHistory) {
-            if (machine.machineId) {
-                const schoolData = await School.findOne({
-                    where: { machineId: machine.machineId }
-                });
-                if (schoolData) {
-                    machine.dataValues.school = schoolData.dataValues;
-                }
-            }
-        }
-
-        if (filteredDispenseHistory.length === 0) {
-            return res.status(404).send({
-                success: false,
-                message: "No dispense history records with items dispensed found."
-            });
-        }
-
-        return res.status(200).send({
-            success: true,
-            data: filteredDispenseHistory,
-            total: totalCount
-        });
-
-    } catch (error) {
-        console.log(error);
-        return res.status(500).send({
-            success: false,
-            message: 'Error retrieving dispense history',
-            error
-        });
-    }
-};
-
-
-exports.getDispenseHistoryExportData = async (req, res) => {
-    try {
-        const { startDate, endDate } = req.query;
-
-        // ✅ where clause for date filtering
+        // Base where clause
         const whereClause = {
             itemsDispensed: { [Op.not]: null },
         };
 
+        // Date filters
         if (startDate && endDate) {
             whereClause.createdAt = {
-                [Op.between]: [new Date(startDate), new Date(endDate)],
+                [Op.between]: [
+                    new Date(`${startDate}T00:00:00Z`),
+                    new Date(`${endDate}T23:59:59Z`),
+                ],
             };
         } else if (startDate) {
             whereClause.createdAt = { [Op.gte]: new Date(startDate) };
@@ -335,12 +859,130 @@ exports.getDispenseHistoryExportData = async (req, res) => {
             whereClause.createdAt = { [Op.lte]: new Date(endDate) };
         }
 
-        const chunkSize = 500; // process 500 rows at a time
+        // Parse school filters
+        let schoolWhere = {};
+        if (filters) {
+            const parsedFilters = JSON.parse(filters);
+            parsedFilters.forEach((f) => {
+                if (f.field === "schoolState" && f.value) {
+                    schoolWhere.state = { [Op.like]: `%${f.value}%` };
+                }
+                if (f.field === "schoolDistrict" && f.value) {
+                    schoolWhere.schoolDistrict = { [Op.like]: `%${f.value}%` };
+                }
+            });
+        }
+
+        // Fetch extra records to ensure filtered results fit in page
+        const fetchSize = pageSize * 5; // fetch 5x to account for filtering
+        const dispenseHistoryBatch = await DispenseHistory.findAll({
+            where: whereClause,
+            order: [["createdAt", "DESC"]],
+            limit: fetchSize,
+            offset,
+        });
+
+        if (!dispenseHistoryBatch.length) {
+            return res.status(404).json({
+                success: false,
+                message: "No dispense history records found for the given filters.",
+            });
+        }
+
+        // Map school data
+        const machineIds = dispenseHistoryBatch.map((d) => d.machineId).filter(Boolean);
+        let schoolMap = {};
+        if (machineIds.length > 0) {
+            const schools = await School.findAll({
+                where: {
+                    machineId: machineIds,
+                    ...schoolWhere,
+                },
+            });
+            schools.forEach((s) => {
+                schoolMap[s.machineId] = s.dataValues;
+            });
+        }
+
+        // Attach school and filter
+        let filteredDispenseHistory = dispenseHistoryBatch.filter((disp) => {
+            if (disp.machineId && schoolMap[disp.machineId]) {
+                disp.dataValues.school = schoolMap[disp.machineId];
+                return true;
+            }
+            return Object.keys(schoolWhere).length === 0; // keep if no school filter
+        });
+
+        // Slice to exact pageSize
+        filteredDispenseHistory = filteredDispenseHistory.slice(0, pageSize);
+
+        if (!filteredDispenseHistory.length) {
+            return res.status(404).json({
+                success: false,
+                message: "No dispense history records found for the given filters.",
+            });
+        }
+
+        // Total count (all DispenseHistory ignoring school filter)
+        const totalCount = await DispenseHistory.count({ where: whereClause });
+
+        return res.status(200).json({
+            success: true,
+            data: filteredDispenseHistory,
+            total: totalCount,
+            page,
+            pageSize,
+        });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            success: false,
+            message: "Error retrieving dispense history",
+            error: error.message,
+        });
+    }
+};
+
+exports.getDispenseHistoryExportData = async (req, res) => {
+    try {
+        const { startDate, endDate, filters } = req.query;
+
+        // ✅ where clause for dispense history
+        const whereClause = {
+            itemsDispensed: { [Op.not]: null },
+        };
+
+        // ✅ date filters
+        if (startDate && endDate) {
+            const start = dayjs(startDate).startOf("day").toDate(); // local start
+            const end = dayjs(endDate).endOf("day").toDate();       // local end
+            whereClause.createdAt = { [Op.between]: [start, end] };
+        }
+        else if (startDate) {
+            whereClause.createdAt = { [Op.gte]: new Date(startDate) };
+        } else if (endDate) {
+            whereClause.createdAt = { [Op.lte]: new Date(endDate) };
+        }
+
+        // ✅ parse DataGrid filters
+        let schoolWhere = {};
+        if (filters) {
+            const parsedFilters = JSON.parse(filters); // DataGrid sends array
+            parsedFilters.forEach(f => {
+                if (f.field === "schoolState" && f.value) {
+                    schoolWhere.state = { [Op.like]: `%${f.value}%` };
+                }
+                if (f.field === "schoolDistrict" && f.value) {
+                    schoolWhere.schoolDistrict = { [Op.like]: `%${f.value}%` };
+                }
+            });
+        }
+
+        const chunkSize = 500;
         let offset = 0;
         let allResults = [];
 
         while (true) {
-            // fetch in chunks
             const batch = await DispenseHistory.findAll({
                 where: whereClause,
                 order: [["createdAt", "DESC"]],
@@ -350,42 +992,62 @@ exports.getDispenseHistoryExportData = async (req, res) => {
 
             if (batch.length === 0) break;
 
-            // ✅ collect machineIds from this batch
-            const machineIds = batch.map((m) => m.machineId).filter(Boolean);
+            const machineIds = batch.map(m => m.machineId).filter(Boolean);
 
-            // ✅ fetch all schools in one query
+            if (machineIds.length === 0) break;
+
             const schools = await School.findAll({
-                where: { machineId: machineIds },
+                where: {
+                    machineId: machineIds,
+                    ...schoolWhere,
+                },
             });
 
             const schoolMap = {};
-            schools.forEach((s) => {
+            schools.forEach(s => {
                 schoolMap[s.machineId] = s.dataValues;
             });
 
-            // attach school data efficiently
-            batch.forEach((machine) => {
+            const filteredBatch = batch.filter(machine => {
                 if (machine.machineId && schoolMap[machine.machineId]) {
                     machine.dataValues.school = schoolMap[machine.machineId];
+                    return true;
                 }
+                return Object.keys(schoolWhere).length === 0; // no filter → keep all
             });
 
-            allResults = allResults.concat(batch);
+            // const filteredBatch = batch.filter(machine => {
+            //     if (Object.keys(schoolWhere).length === 0) return true; // no filters → keep all
+
+            //     if (machine.machineId && schoolMap[machine.machineId]) {
+            //         machine.dataValues.school = schoolMap[machine.machineId];
+            //         // match filters
+            //         return Object.keys(schoolWhere).every(field => {
+            //             const filterValue = schoolWhere[field][Op.like].replace(/%/g, '');
+            //             return machine.dataValues.school[field].includes(filterValue);
+            //         });
+            //     }
+            //     return false;
+            // });
+
+
+            allResults = allResults.concat(filteredBatch);
             offset += chunkSize;
         }
 
         if (allResults.length === 0) {
             return res.status(404).send({
                 success: false,
-                message: "No dispense history records found for the given date range.",
+                message: "No dispense history records found for the given filters.",
             });
         }
 
         return res.status(200).send({
             success: true,
-            data: allResults,
             total: allResults.length,
+            data: allResults,
         });
+
     } catch (error) {
         console.error(error);
         return res.status(500).send({
@@ -395,8 +1057,6 @@ exports.getDispenseHistoryExportData = async (req, res) => {
         });
     }
 };
-
-
 
 
 exports.getDateWiseDispenseHistory = async (req, res) => {
@@ -444,7 +1104,7 @@ exports.getDateWiseDispenseHistory = async (req, res) => {
             data: filteredDispenseHistory
         });
     } catch (error) {
-        console.log(error);
+        // console.log(error);
         return res.status(500).send({
             success: false,
             message: 'Error retrieving dispense history',
@@ -452,9 +1112,6 @@ exports.getDateWiseDispenseHistory = async (req, res) => {
         });
     }
 };
-
-
-
 
 function getStartEndDateRange(periodType) {
     const today = moment().startOf('day');
@@ -493,80 +1150,136 @@ function getStartEndDateRange(periodType) {
     }
 }
 
+// exports.getDistrictWisePadConsunption = async (req, res) => {
+//     try {
+//         const { periodType } = req.params;
 
+//         const [startDate, endDate] = getStartEndDateRange(periodType);
+
+//         const historyResponse = await exports.getDateWiseDispenseHistory(
+//             {
+//                 query: {
+//                     startDate,
+//                     endDate,
+//                 },
+//             },
+//             {
+//                 status: () => ({
+//                     send: (data) => data
+//                 })
+//             }
+//         );
+
+//         if (!historyResponse || !historyResponse.success) {
+//             return res.status(500).send({
+//                 success: false,
+//                 message: "Failed to fetch dispense history"
+//             });
+//         }
+
+//         const dispenseData = historyResponse.data;
+
+//         const plainDispenseData = dispenseData.map(entry => {
+//             const record = entry.get ? entry.get({ plain: true }) : entry;
+//             if (record.school && record.school.get) {
+//                 record.school = record.school.get({ plain: true });
+//             }
+//             return record;
+//         });
+
+//         const districtPadConsumption = {};
+
+//         for (const entry of plainDispenseData) {
+//             const district = entry.school?.schoolDistrict;
+//             const fullState = entry.school?.state;
+//             const padsDispensed = entry.itemsDispensed || 0;
+
+//             if (district && fullState) {
+//                 const shortState = stateShortCodes[fullState] || fullState; // fallback if not found
+//                 const formattedDistrict = `${district} (${shortState})`;
+
+//                 if (!districtPadConsumption[formattedDistrict]) {
+//                     districtPadConsumption[formattedDistrict] = 0;
+//                 }
+//                 districtPadConsumption[formattedDistrict] += padsDispensed;
+//             }
+//         }
+
+//         return res.status(200).send({
+//             success: true,
+//             data: districtPadConsumption
+//         });
+
+//     } catch (error) {
+//         console.error("Error computing district-wise pad consumption:", error);
+//         return res.status(500).send({
+//             success: false,
+//             message: "Error computing pad consumption by district",
+//             error
+//         });
+//     }
+// };
 
 exports.getDistrictWisePadConsunption = async (req, res) => {
     try {
         const { periodType } = req.params;
-
         const [startDate, endDate] = getStartEndDateRange(periodType);
 
-        const historyResponse = await exports.getDateWiseDispenseHistory(
-            {
-                query: {
-                    startDate,
-                    endDate,
-                },
-            },
-            {
-                status: () => ({
-                    send: (data) => data
-                })
-            }
-        );
+        const whereClause = {};
 
-        if (!historyResponse || !historyResponse.success) {
-            return res.status(500).send({
-                success: false,
-                message: "Failed to fetch dispense history"
-            });
+        if (periodType !== "allTime") {
+            whereClause.createdAt = {
+                [Op.between]: [startDate, endDate],
+            };
         }
 
-        const dispenseData = historyResponse.data;
-
-        const plainDispenseData = dispenseData.map(entry => {
-            const record = entry.get ? entry.get({ plain: true }) : entry;
-            if (record.school && record.school.get) {
-                record.school = record.school.get({ plain: true });
-            }
-            return record;
+        const result = await DispenseHistory.findAll({
+            where: whereClause,
+            include: [
+                {
+                    model: SchoolDetail,
+                    as: "school",
+                    attributes: [],
+                },
+            ],
+            attributes: [
+                [Sequelize.col("school.schoolDistrict"), "district"],
+                [Sequelize.col("school.state"), "state"],
+                [Sequelize.fn("SUM", Sequelize.col("itemsDispensed")), "totalPads"],
+            ],
+            group: ["school.schoolDistrict", "school.state"],
+            raw: true,
         });
 
+        // format response
         const districtPadConsumption = {};
 
-        for (const entry of plainDispenseData) {
-            const district = entry.school?.schoolDistrict;
-            const fullState = entry.school?.state;
-            const padsDispensed = entry.itemsDispensed || 0;
+        for (const row of result) {
+            const district = row.district;
+            const fullState = row.state;
+            const pads = Number(row.totalPads) || 0;
 
             if (district && fullState) {
-                const shortState = stateShortCodes[fullState] || fullState; // fallback if not found
+                const shortState = stateShortCodes[fullState] || fullState;
                 const formattedDistrict = `${district} (${shortState})`;
 
-                if (!districtPadConsumption[formattedDistrict]) {
-                    districtPadConsumption[formattedDistrict] = 0;
-                }
-                districtPadConsumption[formattedDistrict] += padsDispensed;
+                districtPadConsumption[formattedDistrict] = pads;
             }
         }
 
         return res.status(200).send({
             success: true,
-            data: districtPadConsumption
+            data: districtPadConsumption,
         });
-
     } catch (error) {
         console.error("Error computing district-wise pad consumption:", error);
         return res.status(500).send({
             success: false,
             message: "Error computing pad consumption by district",
-            error
+            error,
         });
     }
 };
-
-
-
 
 exports.getDistrictWiseSchoolCount = async (req, res) => {
     try {
@@ -609,10 +1322,6 @@ exports.getDistrictWiseSchoolCount = async (req, res) => {
         });
     }
 };
-
-
-
-
 
 // exports.getRefillingHistory = async (req, res) => {
 //     try {
@@ -683,10 +1392,16 @@ exports.getRefillingHistory = async (req, res) => {
         // Build where clause
         const whereClause = { event_type: '2' };
 
+        // if (startDate && endDate) {
+        //     whereClause.createdAt = {
+        //         [Op.between]: [new Date(startDate), new Date(endDate)]
+        //     };
+        // }
+
         if (startDate && endDate) {
-            whereClause.createdAt = {
-                [Op.between]: [new Date(startDate), new Date(endDate)]
-            };
+            const start = new Date(`${startDate}T00:00:00Z`);
+            const end = new Date(`${endDate}T23:59:59Z`);
+            whereClause.createdAt = { [Op.between]: [start, end] };
         }
 
         // Fetch total count
@@ -735,23 +1450,35 @@ exports.getRefillingHistory = async (req, res) => {
     }
 };
 
-
-
 exports.getRefillingHistoryExportData = async (req, res) => {
     try {
-        const { startDate, endDate } = req.query;
+        const { startDate, endDate, filters } = req.query;
 
         // ✅ Build where clause
         const whereClause = { event_type: "2" };
 
         if (startDate && endDate) {
-            whereClause.createdAt = {
-                [Op.between]: [new Date(startDate), new Date(endDate)],
-            };
+            const start = new Date(`${startDate}T00:00:00Z`);
+            const end = new Date(`${endDate}T23:59:59Z`);
+            whereClause.createdAt = { [Op.between]: [start, end] };
         } else if (startDate) {
             whereClause.createdAt = { [Op.gte]: new Date(startDate) };
         } else if (endDate) {
             whereClause.createdAt = { [Op.lte]: new Date(endDate) };
+        }
+
+        // ✅ parse DataGrid filters
+        let schoolWhere = {};
+        if (filters) {
+            const parsedFilters = JSON.parse(filters); // DataGrid sends array
+            parsedFilters.forEach(f => {
+                if (f.field === "schoolState" && f.value) {
+                    schoolWhere.state = { [Op.like]: `%${f.value}%` };
+                }
+                if (f.field === "schoolDistrict" && f.value) {
+                    schoolWhere.schoolDistrict = { [Op.like]: `%${f.value}%` };
+                }
+            });
         }
 
         const chunkSize = 500;
@@ -760,6 +1487,13 @@ exports.getRefillingHistoryExportData = async (req, res) => {
 
         while (true) {
             // ✅ fetch batch
+            // const batch = await DispenseHistory.findAll({
+            //     where: whereClause,
+            //     order: [["createdAt", "DESC"]],
+            //     limit: chunkSize,
+            //     offset,
+            // });
+
             const batch = await DispenseHistory.findAll({
                 where: whereClause,
                 order: [["createdAt", "DESC"]],
@@ -772,9 +1506,18 @@ exports.getRefillingHistoryExportData = async (req, res) => {
             // ✅ collect machineIds
             const machineIds = batch.map((m) => m.machineId).filter(Boolean);
 
+            if (machineIds.length === 0) break;
+
             // ✅ fetch schools in bulk
+            // const schools = await School.findAll({
+            //     where: { machineId: machineIds },
+            // });
+
             const schools = await School.findAll({
-                where: { machineId: machineIds },
+                where: {
+                    machineId: machineIds,
+                    ...schoolWhere,
+                },
             });
 
             const schoolMap = {};
@@ -783,13 +1526,22 @@ exports.getRefillingHistoryExportData = async (req, res) => {
             });
 
             // ✅ attach school data
-            batch.forEach((entry) => {
-                if (entry.machineId && schoolMap[entry.machineId]) {
-                    entry.dataValues.school = schoolMap[entry.machineId];
+            // batch.forEach((entry) => {
+            //     if (entry.machineId && schoolMap[entry.machineId]) {
+            //         entry.dataValues.school = schoolMap[entry.machineId];
+            //     }
+            // });
+
+
+            const filteredBatch = batch.filter(machine => {
+                if (machine.machineId && schoolMap[machine.machineId]) {
+                    machine.dataValues.school = schoolMap[machine.machineId];
+                    return true;
                 }
+                return Object.keys(schoolWhere).length === 0; // no filter → keep all
             });
 
-            allResults = allResults.concat(batch);
+            allResults = allResults.concat(filteredBatch);
             offset += chunkSize;
         }
 
@@ -815,7 +1567,6 @@ exports.getRefillingHistoryExportData = async (req, res) => {
     }
 };
 
-
 exports.getDispenseHistoryForMachineId = async (req, res) => {
     try {
         const { machineId } = req.params;  // Extract machineId from request params
@@ -839,7 +1590,7 @@ exports.getDispenseHistoryForMachineId = async (req, res) => {
             data: dispenseHistoryResult
         });
     } catch (error) {
-        console.log(error);
+        // console.log(error);
         return res.status(500).send({
             success: false,
             message: 'Error retrieving dispense history',
@@ -1214,6 +1965,32 @@ exports.getDashboardData = async (req, res) => {
         const inActiveMachinesCount = installedMachinesCount - activeMachinesCount;
 
 
+        // const consumptionData = {
+        //     today: 0,
+        //     yesterday: 0,
+        //     week: 0,
+        //     month: 0,
+        //     quarter: 0,
+        //     total: 0
+        // };
+
+        // // Get the total pad consumption for each period
+        // for (const period of Object.keys(consumptionData)) {
+        //     // const startDate = getDateRange(period);
+        //     const { start, end } = getDateRange(period);
+        //     let query = 'SELECT SUM(itemsDispensed) AS totalDispensed FROM DispenseHistories';
+        //     // If there's a start date, filter by it
+        //     if (start && end) {
+        //         query += ` WHERE createdAt >= '${start}' AND createdAt <= '${end}'`;
+        //     }
+        //     const [result] = await mySqlPool.query(query);
+        //     if (result || result[0]) {
+        //         consumptionData[period] = result.totalDispensed || 0; // Handle if no records are found (returns null)
+        //     } else {
+        //         consumptionData[period] = 0; // No records found, set total to 0
+        //     }
+        // }
+
         const consumptionData = {
             today: 0,
             yesterday: 0,
@@ -1223,49 +2000,64 @@ exports.getDashboardData = async (req, res) => {
             total: 0
         };
 
-        // Get the total pad consumption for each period
         for (const period of Object.keys(consumptionData)) {
-            // const startDate = getDateRange(period);
             const { start, end } = getDateRange(period);
-            let query = 'SELECT SUM(itemsDispensed) AS totalDispensed FROM DispenseHistories';
-            // If there's a start date, filter by it
-            if (start && end) {
-                query += ` WHERE createdAt >= '${start}' AND createdAt <= '${end}'`;
-            }
-            const [result] = await mySqlPool.query(query);
-            if (result || result[0]) {
-                consumptionData[period] = result.totalDispensed || 0; // Handle if no records are found (returns null)
-            } else {
-                consumptionData[period] = 0; // No records found, set total to 0
-            }
+
+            let query = `
+                SELECT 
+                COALESCE(d.totalDispensed, 0) + COALESCE(m.totalManualPads, 0) AS totalConsumption
+                FROM
+                (
+                    SELECT SUM(itemsDispensed) AS totalDispensed
+                    FROM DispenseHistories
+                    ${start && end ? "WHERE createdAt BETWEEN ? AND ?" : ""}
+                ) d,
+                (
+                    SELECT SUM(padCounts) AS totalManualPads
+                    FROM manualpads
+                    ${start && end ? "WHERE dateOfEntry BETWEEN ? AND ?" : ""}
+                ) m
+            `;
+
+            const params = start && end ? [start, end, start, end] : [];
+
+            const [rows] = await mySqlPool.query(query, params);
+
+            consumptionData[period] = rows?.totalConsumption || 0;
         }
 
-        // const monthlyConsumptionData = [];
+        // for (const period of Object.keys(consumptionData)) {
+        //     const { start, end } = getDateRange(period);
+        //     // let startDate = new Date("2025-11-27");
+        //     // let endDate = new Date("2026-02-26");
+        //     let startDate = new Date("2025-11-27 14:00:00");
+        //     let endDate = new Date("2026-02-26 14:00:00");
 
-        // for (let i = 11; i >= 0; i--) {
-        //     const startOfMonth = moment().subtract(i, 'months').startOf('month').format('YYYY-MM-DD HH:mm:ss');
-        //     const endOfMonth = moment().subtract(i, 'months').endOf('month').format('YYYY-MM-DD HH:mm:ss');
-
-        //     const query = `
-        //         SELECT SUM(itemsDispensed) AS totalDispensed
-        //         FROM DispenseHistories
-        //         WHERE createdAt >= '${startOfMonth}' AND createdAt <= '${endOfMonth}'
+        //     let query = `
+        //         SELECT 
+        //         COALESCE(d.totalDispensed, 0) + COALESCE(m.totalManualPads, 0) AS totalConsumption
+        //         FROM
+        //         (
+        //             SELECT SUM(itemsDispensed) AS totalDispensed
+        //             FROM DispenseHistories
+        //             ${startDate && endDate ? "WHERE createdAt BETWEEN ? AND ?" : ""}
+        //         ) d,
+        //         (
+        //             SELECT SUM(padCounts) AS totalManualPads
+        //             FROM manualpads
+        //             ${startDate && endDate ? "WHERE dateOfEntry BETWEEN ? AND ?" : ""}
+        //         ) m
         //     `;
 
-        //     const [monthlyResult] = await mySqlPool.query(query);
-        //     const monthKey = moment().subtract(i, 'months').format("MMM'YY");
+        //     const params = startDate && endDate ? [startDate, endDate, startDate, endDate] : [];
 
-        //     const monthData = {
-        //         x: monthKey,
-        //         y: monthlyResult.totalDispensed || 0
-        //     };
+        //     const [rows] = await mySqlPool.query(query, params);
 
-        //     monthlyConsumptionData.push(monthData);
+        //     console.log(`Query result for ${period}:`, rows); // Debug log to check the query result
+        //     console.log(`Query date`, startDate, endDate); // Debug log to check the query result
+
+        //     consumptionData[period] = rows?.totalConsumption || 0;
         // }
-
-        // console.log(monthlyConsumptionData);
-
-        // const periodType = 'week'; // or 'month' | 'quarter' | 'year'
 
         const periodType = 'month';
         const getStartEndDates = (i, periodType) => {
@@ -1334,37 +2126,6 @@ exports.getDashboardData = async (req, res) => {
 
         const averageGirls = Math.round(totalGirls / totalSchools) || 0;
 
-
-        // const districtWiseSummary = await School.findAll({
-        //     attributes: [
-        //         'schoolDistrict',
-        //         'state',
-        //         [fn('COUNT', fn('DISTINCT', col('schoolBlock'))), 'blockCount'],
-        //         [fn('COUNT', col('schoolId')), 'schoolCount'],
-        //         [fn('SUM', col('numberOfGirls')), 'totalBeneficiaries'],
-        //         [
-        //             fn('SUM', literal(`CASE WHEN VendingMachine.status = 'active' THEN 1 ELSE 0 END`)),
-        //             'activeMachineCount'
-        //         ],
-        //         [
-        //             fn('SUM', literal(`CASE WHEN School.machineId IS NOT NULL AND School.machineId != '' THEN 1 ELSE 0 END`)),
-        //             'machineCount'
-        //         ],
-        //     ],
-        //     include: [
-        //         {
-        //             model: VendingMachine,
-        //             attributes: [],
-        //             required: false, // LEFT JOIN
-        //         }
-        //     ],
-        //     group: ['schoolDistrict'],
-        //     raw: true
-        // });
-
-        const lastMonthStart = moment().subtract(1, 'month').startOf('month').format('YYYY-MM-DD HH:mm:ss');
-        const lastMonthEnd = moment().subtract(1, 'month').endOf('month').format('YYYY-MM-DD HH:mm:ss');
-
         const stateWiseConsumptionData = await School.findAll({
             attributes: [
                 'state',
@@ -1400,19 +2161,6 @@ exports.getDashboardData = async (req, res) => {
                     2)`),
                     'avgConsumptionAllTime'
                 ],
-
-                // // Average Consumption Per Girl - Last Month
-                // Correct average pads per girl for last month
-                // [
-                //     literal(`ROUND(
-                // SUM(CASE
-                //     WHEN DispenseHistories.createdAt >= '${lastMonthStart}'
-                //     AND DispenseHistories.createdAt <= '${lastMonthEnd}'
-                //     THEN DispenseHistories.itemsDispensed
-                //     ELSE 0
-                // END) / NULLIF(SUM(DISTINCT School.numberOfGirls), 0), 2)`),
-                //     'avgConsumptionLastMonth'
-                // ]
                 [
                     literal(`ROUND(
                      SUM(
@@ -1446,12 +2194,26 @@ exports.getDashboardData = async (req, res) => {
                 [fn('COUNT', fn('DISTINCT', col('School.schoolBlock'))), 'blockCount'],
                 [fn('COUNT', col('School.schoolId')), 'schoolCount'], // FIXED: add School. prefix
                 [fn('SUM', col('School.numberOfGirls')), 'totalBeneficiaries'], // FIXED: add School. prefix
+                // ✅ Active if updated in last 30 min
                 [
-                    fn('SUM', literal(`CASE WHEN VendingMachine.status = 'active' THEN 1 ELSE 0 END`)),
+                    fn(
+                        'SUM',
+                        literal(`CASE 
+                    WHEN VendingMachine.onlineStatusUpdatedAt > DATE_SUB(NOW(), INTERVAL 30 MINUTE) 
+                    THEN 1 ELSE 0 END`)
+                    ),
                     'activeMachineCount'
                 ],
+
+                // ✅ Inactive if not updated in last 30 min
                 [
-                    fn('SUM', literal(`CASE WHEN VendingMachine.status = 'inactive' THEN 1 ELSE 0 END`)),
+                    fn(
+                        'SUM',
+                        literal(`CASE 
+                    WHEN VendingMachine.onlineStatusUpdatedAt <= DATE_SUB(NOW(), INTERVAL 30 MINUTE) 
+                    OR VendingMachine.onlineStatusUpdatedAt IS NULL
+                    THEN 1 ELSE 0 END`)
+                    ),
                     'inactiveMachineCount'
                 ],
                 [
@@ -1477,12 +2239,26 @@ exports.getDashboardData = async (req, res) => {
                 [fn('COUNT', fn('DISTINCT', col('School.schoolBlock'))), 'blockCount'],
                 [fn('COUNT', col('School.schoolId')), 'schoolCount'],
                 [fn('SUM', col('School.numberOfGirls')), 'totalBeneficiaries'],
+                // ✅ Active if updated in last 30 min
                 [
-                    fn('SUM', literal(`CASE WHEN VendingMachine.status = 'active' THEN 1 ELSE 0 END`)),
+                    fn(
+                        'SUM',
+                        literal(`CASE 
+            WHEN VendingMachine.onlineStatusUpdatedAt >= DATE_SUB(NOW(), INTERVAL 30 MINUTE) 
+            THEN 1 ELSE 0 END`)
+                    ),
                     'activeMachineCount'
                 ],
+
+                // ✅ Inactive if not updated in last 30 min
                 [
-                    fn('SUM', literal(`CASE WHEN VendingMachine.status = 'inactive' THEN 1 ELSE 0 END`)),
+                    fn(
+                        'SUM',
+                        literal(`CASE 
+            WHEN VendingMachine.onlineStatusUpdatedAt < DATE_SUB(NOW(), INTERVAL 30 MINUTE) 
+            OR VendingMachine.onlineStatusUpdatedAt IS NULL
+            THEN 1 ELSE 0 END`)
+                    ),
                     'inactiveMachineCount'
                 ],
                 [
@@ -1550,7 +2326,6 @@ exports.getDashboardData = async (req, res) => {
             }
         });
     } catch (error) {
-        console.log(error);
         return res.status(500).send({
             success: false,
             message: 'Error retrieving vending machine data',
@@ -1611,6 +2386,7 @@ exports.getDashboardData = async (req, res) => {
 //         data: consumptionData
 //     });
 // };
+
 
 exports.getPeriodWiseConsumptionData = async (req, res) => {
     const { periodType, state, district } = req.params;
@@ -1780,7 +2556,7 @@ exports.updateNgoSpoc = async (req, res) => {
     const { id } = req.params; // Assuming you're passing the Spoc ID in the URL params
     const { spocName, spocMobileNo, spocType } = req.body;
 
-    console.log("Updated NGO SPOC Details:", req.body);
+    // console.log("Updated NGO SPOC Details:", req.body);
 
     // Validate required fields
     if (!spocName || !spocMobileNo || !spocType) {
@@ -1898,6 +2674,1329 @@ exports.getAllConsumptionPerGirl = async (req, res) => {
             success: false,
             message: "Error calculating stats",
             error
+        });
+    }
+};
+
+
+// Manual Pad Distributr
+exports.createManualPads = async (req, res) => {
+    const {
+        machineId,
+        padCounts,
+        remark,
+        dateOfEntry,
+        eventStartDate,
+        eventEndDate
+    } = req.body;
+
+    if (!machineId || !padCounts || !dateOfEntry || !eventStartDate || !eventEndDate) {
+        return res.status(400).send({
+            success: false,
+            message: 'All fields  are required'
+        });
+    }
+
+    try {
+        // 1️⃣ Check if this machineId already exists in ManualPads
+        const existing = await ManualPads.findOne({ where: { machineId } });
+
+        if (existing) {
+            return res.status(400).send({
+                success: false,
+                message: 'Manual Pads for this machine already exist. Please update instead.'
+            });
+        }
+
+        const manualPads = await ManualPads.create({
+            machineId,
+            padCounts,
+            remark,
+            dateOfEntry,
+            eventStartDate,
+            eventEndDate
+        });
+
+        // const stockRecord = await StockHistory.findOne({
+        //     where: { machineId }
+        // });
+
+        // // 3️⃣ Create NEW DispenseHistory entry (instead of UPDATE)
+        // const dispenseHistory = await DispenseHistory.create({
+        //     event_type: "MANUAL",        // or whatever constant you use
+        //     machineId: Number(machineId),
+        //     stock: stockRecord ? stockRecord.stock : 0,                    // or calculate if needed
+        //     itemsDispensed: padCounts,        // manual entry so null
+        //     manualPads: padCounts        // 🔥 key part
+        // });
+
+        const updateQuery = `
+        UPDATE DispenseHistories
+        SET manualPads = ?
+        WHERE machineId = ?
+        `;
+
+
+        // Remove destructuring
+        const updateResult = await mySqlPool.query(updateQuery, [padCounts, Number(machineId)]);
+
+        return res.status(201).send({
+            success: true,
+            message: 'Manual Pads created successfully',
+            data: manualPads
+        });
+    } catch (error) {
+        if (error.name === 'SequelizeUniqueConstraintError') {
+            return res.status(400).send({
+                success: false,
+                message: 'Manual Pads must be unique',
+                error
+            });
+        }
+
+        console.error(error);
+        return res.status(500).send({
+            success: false,
+            message: 'Error creating NGO SPOC',
+            error
+        });
+    }
+};
+
+exports.getAllManualPads = async (req, res) => {
+    try {
+        // Fetch all data from the NgoSpoc table
+        const manualPadscResult = await ManualPads.findAll();
+
+        // Check if any records exist
+        if (manualPadscResult.length === 0) {
+            return res.status(404).send({
+                success: false,
+                message: "No ManualPads records found."
+            });
+        }
+
+        // Return the fetched ManualPads
+        return res.status(200).send({
+            success: true,
+            data: manualPadscResult
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).send({
+            success: false,
+            message: 'Error retrieving ManualPads',
+            error
+        });
+    }
+};
+
+exports.deleteManualPads = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Check if record exists
+        const manualPad = await ManualPads.findByPk(id);
+        if (!manualPad) {
+            return res.status(404).send({
+                success: false,
+                message: "ManualPad record not found."
+            });
+        }
+
+        // Delete record
+        await manualPad.destroy();
+
+        return res.status(200).send({
+            success: true,
+            message: "ManualPad deleted successfully.",
+            deletedId: id
+        });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).send({
+            success: false,
+            message: "Error deleting ManualPad",
+            error
+        });
+    }
+};
+
+// controller/manualPadsController.js
+exports.updateManualPads = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { machineId,
+            padCounts,
+            remark,
+            dateOfEntry,
+            eventStartDate,
+            eventEndDate } = req.body;
+
+        // Check if record exists
+        const manualPad = await ManualPads.findByPk(id);
+
+        const updateQuery = `
+        UPDATE DispenseHistories
+        SET manualPads = ?
+        WHERE machineId = ?
+        `;
+
+        const updateResult = await mySqlPool.query(updateQuery, [padCounts, Number(machineId)]);
+
+        // const stockRecord = await StockHistory.findOne({
+        //     where: { machineId }
+        // });
+
+        // const dispenseHistory = await DispenseHistory.create({
+        //     event_type: "MANUAL",        // or whatever constant you use
+        //     machineId: Number(machineId),
+        //     stock: stockRecord ? stockRecord.stock : 0,                    // or calculate if needed
+        //     itemsDispensed: padCounts - manualPad.padCounts,        // manual entry so null
+        //     manualPads: padCounts - manualPad.padCounts        // 🔥 key part
+        // });
+
+        if (!manualPad) {
+            return res.status(404).send({
+                success: false,
+                message: "ManualPad record not found."
+            });
+        }
+
+        // Update record
+        manualPad.machineId = machineId || manualPad.machineId;
+        manualPad.padCounts = padCounts || manualPad.padCounts;
+        manualPad.remark = remark || manualPad.remark;
+        manualPad.dateOfEntry = dateOfEntry || manualPad.dateOfEntry;
+        manualPad.eventStartDate = eventStartDate || manualPad.eventStartDate;
+        manualPad.eventEndDate = eventEndDate || manualPad.eventEndDate;
+
+        await manualPad.save();
+
+        return res.status(200).send({
+            success: true,
+            message: "ManualPad updated successfully.",
+            data: manualPad
+        });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).send({
+            success: false,
+            message: "Error updating ManualPad",
+            error
+        });
+    }
+};
+
+// Reports Section Apis
+
+exports.machineWiseDispense = async (req, res) => {
+    try {
+        const {
+            states = [],
+            districts = [],
+            startDate,
+            endDate,
+            dispenseType = "all",
+        } = req.body;
+
+        const start = `${startDate} 00:00:00`;
+        const end = `${endDate} 23:59:59`;
+
+        let whereConditions = `
+      dh.createdAt BETWEEN '${start}' AND '${end}'
+    `;
+
+        if (dispenseType === "machine") {
+            whereConditions += ` AND dh.manualPads IS NULL`;
+        }
+
+        if (dispenseType === "manual") {
+            whereConditions += ` AND dh.manualPads IS NOT NULL`;
+        }
+
+        if (states.length > 0) {
+            whereConditions += `
+        AND s.state IN (${states.map(s => `'${s}'`).join(",")})
+      `;
+        }
+
+        if (districts.length > 0) {
+            whereConditions += `
+        AND s.schoolDistrict IN (${districts.map(d => `'${d}'`).join(",")})
+      `;
+        }
+
+        const data = await Sequelize.query(
+            `
+      SELECT 
+        dh.machineId,
+        s.state,
+        s.schoolDistrict,
+        s.schoolName,
+
+        /* ✅ SUPPORTED GIRLS */
+        SUM(DISTINCT s.numberOfGirls) AS supportedGirls,
+
+        /* ✅ PADS DISPENSED (DASHBOARD LOGIC) */
+        SUM(dh.itemsDispensed) AS padsDispensed,
+
+        /* ✅ AVG CONSUMPTION (TIME-BASED) */
+        ROUND(
+          (SUM(dh.itemsDispensed) * 30) /
+          NULLIF(
+            DATEDIFF(
+              '${end}',
+              MIN(dh.createdAt)
+            ) * SUM(DISTINCT s.numberOfGirls),
+            0
+          ),
+          2
+        ) AS avgConsumption,
+
+        /* ✅ TOTAL REFILL */
+        COUNT(
+          CASE 
+            WHEN dh.event_type = '2' THEN 1
+            ELSE NULL
+          END
+        ) AS totalRefill
+
+      FROM DispenseHistories dh
+      JOIN Schools s 
+        ON s.machineId = dh.machineId
+
+      WHERE ${whereConditions}
+
+      GROUP BY 
+        dh.machineId,
+        s.state,
+        s.schoolDistrict,
+        s.schoolName
+
+      ORDER BY dh.machineId ASC
+      `,
+            { type: Sequelize.QueryTypes.SELECT }
+        );
+
+        /* =============================
+          ✅ SUMMARY (AS PER INCLUDE)
+       ============================== */
+        const summary = {
+            period: `${startDate} to ${endDate}`,
+
+            numberOfDays:
+                Math.ceil(
+                    (new Date(endDate) - new Date(startDate)) /
+                    (1000 * 60 * 60 * 24)
+                ) + 1,
+
+            numberOfStates: new Set(data.map(d => d.state)).size,
+
+            numberOfDistricts: new Set(data.map(d => d.schoolDistrict)).size,
+
+            numberOfMachinesInstalled: new Set(
+                data.map(d => d.machineId)
+            ).size,
+
+            numberOfSchoolsCovered: new Set(
+                data.map(d => d.schoolName)
+            ).size,
+
+            numberOfSupportedGirls: data.reduce(
+                (sum, d) => sum + Number(d.supportedGirls || 0),
+                0
+            ),
+
+            numberOfPadsDispensed: data.reduce(
+                (sum, d) => sum + Number(d.padsDispensed || 0),
+                0
+            ),
+
+            averageConsumptionPerGirl: (() => {
+                const totalGirls = data.reduce(
+                    (sum, d) => sum + Number(d.supportedGirls || 0),
+                    0
+                );
+                const totalPads = data.reduce(
+                    (sum, d) => sum + Number(d.padsDispensed || 0),
+                    0
+                );
+                return totalGirls
+                    ? +(totalPads / totalGirls).toFixed(2)
+                    : 0;
+            })(),
+
+            totalRefills: data.reduce(
+                (sum, d) => sum + Number(d.totalRefill || 0),
+                0
+            ),
+        };
+
+        res.status(200).json({
+            status: true,
+            data,
+            summary
+        });
+
+    } catch (error) {
+        console.error("machineWiseDispense", error);
+        res.status(500).json({
+            status: false,
+            message: "Server error",
+        });
+    }
+};
+
+exports.stateOrDistrictWiseDispenseComparison = async (req, res) => {
+    try {
+        const {
+            states = [],
+            districts = [],
+            startDate,
+            endDate,
+            dispenseType = "all"
+        } = req.body;
+
+        const start = `${startDate} 00:00:00`;
+        const end = `${endDate} 23:59:59`;
+
+        let whereConditions = `
+      dh.createdAt BETWEEN '${start}' AND '${end}'
+    `;
+
+        if (dispenseType === "machine") {
+            whereConditions += ` AND dh.manualPads IS NULL`;
+        }
+
+        if (dispenseType === "manual") {
+            whereConditions += ` AND dh.manualPads IS NOT NULL`;
+        }
+
+        if (states.length > 0) {
+            whereConditions += `
+        AND s.state IN (${states.map(s => `'${s}'`).join(",")})
+      `;
+        }
+
+        if (districts.length > 0) {
+            whereConditions += `
+        AND s.schoolDistrict IN (${districts.map(d => `'${d}'`).join(",")})
+      `;
+        }
+
+        const data = await Sequelize.query(
+            `
+      SELECT
+        s.state,
+        s.schoolDistrict,
+
+        /* ✅ MACHINES INSTALLED */
+        COUNT(DISTINCT s.machineId) AS machinesInstalled,
+
+        /* ✅ SCHOOLS COVERED */
+        COUNT(DISTINCT s.schoolId) AS schoolsCovered,
+
+        /* ✅ SUPPORTED GIRLS */
+        SUM(DISTINCT s.numberOfGirls) AS supportedGirls,
+
+        /* ✅ PADS DISPENSED (DASHBOARD LOGIC) */
+        SUM(dh.itemsDispensed) AS padsDispensed,
+
+        /* ✅ AVG CONSUMPTION (MACHINE-WISE LOGIC) */
+        ROUND(
+          (SUM(dh.itemsDispensed) * 30) /
+          NULLIF(
+            DATEDIFF(
+              '${end}',
+              MIN(dh.createdAt)
+            ) * SUM(DISTINCT s.numberOfGirls),
+            0
+          ),
+          2
+        ) AS avgConsumption
+
+      FROM DispenseHistories dh
+      JOIN Schools s 
+        ON s.machineId = dh.machineId
+
+      WHERE ${whereConditions}
+
+      GROUP BY 
+        s.state,
+        s.schoolDistrict
+
+      ORDER BY 
+        s.state ASC,
+        s.schoolDistrict ASC
+      `,
+            { type: Sequelize.QueryTypes.SELECT }
+        );
+
+        // Summary object
+        const summary = {
+            period: `${startDate} to ${endDate}`,
+            numberOfDays: Math.ceil((new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24)) + 1,
+            numberOfStates: new Set(data.map(d => d.state)).size,
+            numberOfDistricts: new Set(data.map(d => d.schoolDistrict)).size,
+            numberOfMachinesInstalled: data.reduce((sum, d) => sum + Number(d.machinesInstalled || 0), 0),
+            numberOfSchoolsCovered: data.reduce((sum, d) => sum + Number(d.schoolsCovered || 0), 0),
+            numberOfSupportedGirls: data.reduce((sum, d) => sum + Number(d.supportedGirls || 0), 0),
+            numberOfPadsDispensed: data.reduce((sum, d) => sum + Number(d.padsDispensed || 0), 0),
+            averageConsumptionPerGirl: (() => {
+                const totalGirls = data.reduce((sum, d) => sum + Number(d.supportedGirls || 0), 0);
+                const totalPads = data.reduce((sum, d) => sum + Number(d.padsDispensed || 0), 0);
+                return totalGirls ? +(totalPads / totalGirls).toFixed(2) : 0;
+            })()
+        };
+
+        res.status(200).json({
+            status: true,
+            data,
+            summary
+        });
+
+    } catch (error) {
+        console.error("stateOrDistrictWiseDispenseComparison", error);
+        res.status(500).json({
+            status: false,
+            message: "Server error"
+        });
+    }
+};
+
+exports.avgConsumptionComparisonReport = async (req, res) => {
+    try {
+        const {
+            states = [],
+            districts = [],
+            startDate,
+            endDate,
+            dispenseType = "all",
+            minRange = 0,
+            maxRange = 5,
+            step = 0.25
+        } = req.body;
+
+        const start = `${startDate} 00:00:00`;
+        const end = `${endDate} 23:59:59`;
+
+        let whereConditions = `dh.createdAt BETWEEN '${start}' AND '${end}'`;
+
+        if (dispenseType === "machine") whereConditions += ` AND dh.manualPads IS NULL`;
+        else if (dispenseType === "manual") whereConditions += ` AND dh.manualPads IS NOT NULL`;
+
+        if (states.length) whereConditions += ` AND s.state IN (${states.map(s => `'${s}'`).join(",")})`;
+        if (districts.length) whereConditions += ` AND s.schoolDistrict IN (${districts.map(d => `'${d}'`).join(",")})`;
+
+        const rows = await Sequelize.query(`
+            SELECT
+                s.state,
+                s.schoolDistrict,
+                s.schoolName,
+                s.numberOfGirls,
+                SUM(dh.itemsDispensed) AS totalPads,
+                ROUND(SUM(dh.itemsDispensed) / NULLIF(s.numberOfGirls, 0), 2) AS avgConsumption
+            FROM DispenseHistories dh
+            JOIN Schools s ON s.machineId = dh.machineId
+            WHERE ${whereConditions}
+            GROUP BY s.state, s.schoolDistrict, s.schoolName, s.numberOfGirls
+            ORDER BY s.state, s.schoolDistrict, s.schoolName
+        `, { type: Sequelize.QueryTypes.SELECT });
+
+        const ranges = [];
+        for (let i = minRange; i < maxRange; i += step) {
+            ranges.push({
+                min: i,
+                max: +(i + step).toFixed(2),
+                label: `${i.toFixed(2)} – ${(i + step).toFixed(2)}`
+            });
+        }
+
+        const totalSchools = rows.length;
+
+        // Group by state first
+        const stateMap = {};
+
+        rows.forEach(row => {
+            if (!stateMap[row.state]) stateMap[row.state] = {};
+
+            const stateGroup = stateMap[row.state];
+
+            // find range
+            const range = ranges.find(r => row.avgConsumption >= r.min && row.avgConsumption <= r.max);
+            if (!range) return;
+
+            const key = `${row.schoolDistrict}_${range.label}`;
+            if (!stateGroup[key]) {
+                stateGroup[key] = {
+                    state: row.state,
+                    schoolDistrict: row.schoolDistrict,
+                    averageConsumptionRange: range.label,
+                    noOfSchools: 0
+                };
+            }
+
+            stateGroup[key].noOfSchools++;
+        });
+
+        // After building `stateMap` as before
+
+        const result = [];
+
+        Object.keys(stateMap).forEach(state => {
+            // get all districts in this state
+            const districtNames = [...new Set(rows.filter(r => r.state === state).map(r => r.schoolDistrict))];
+
+            districtNames.forEach(district => {
+                ranges.forEach(range => {
+                    const key = `${district}_${range.label}`;
+                    const data = stateMap[state][key] || {
+                        state,
+                        schoolDistrict: district,
+                        averageConsumptionRange: range.label,
+                        noOfSchools: 0
+                    };
+
+                    data.percentOfTotalSchools = totalSchools
+                        ? ((data.noOfSchools / totalSchools) * 100).toFixed(2) + "%"
+                        : "0%";
+
+                    result.push(data);
+                });
+            });
+        });
+
+        res.status(200).json({
+            status: true,
+            totalSchools,
+            data: result
+        });
+
+    } catch (error) {
+        console.error("avgConsumptionComparisonReport", error);
+        res.status(500).json({
+            status: false,
+            message: "Server error",
+            error
+        });
+    }
+};
+
+exports.machineWiseDispenseAndRefill = async (req, res) => {
+    try {
+        const {
+            states = [],
+            districts = [],
+            startDate,
+            endDate,
+            dispenseType = "all",
+        } = req.body;
+
+        /* =============================
+           DATE RANGE
+        ============================== */
+        const start = `${startDate} 00:00:00`;
+        const end = `${endDate} 23:59:59`;
+
+        /* =============================
+           WHERE CONDITIONS
+        ============================== */
+        let whereConditions = `
+            dh.createdAt BETWEEN '${start}' AND '${end}'
+        `;
+
+        /* DISPENSE TYPE FILTER */
+        if (dispenseType === "machine") {
+            whereConditions += ` AND dh.manualPads IS NULL`;
+        }
+
+        if (dispenseType === "manual") {
+            whereConditions += ` AND dh.manualPads IS NOT NULL`;
+        }
+
+        /* STATE FILTER */
+        if (states.length > 0) {
+            whereConditions += `
+                AND s.state IN (${states.map(s => `'${s}'`).join(",")})
+            `;
+        }
+
+        /* DISTRICT FILTER */
+        if (districts.length > 0) {
+            whereConditions += `
+                AND s.schoolDistrict IN (${districts.map(d => `'${d}'`).join(",")})
+            `;
+        }
+
+        /* =============================
+           MAIN QUERY
+        ============================== */
+        const data = await Sequelize.query(
+            `
+            SELECT
+                dh.machineId,
+                s.state,
+                s.schoolDistrict,
+                s.schoolName,
+                s.schoolSpocName,
+
+                /* ✅ SUPPORTED GIRLS */
+                SUM(DISTINCT s.numberOfGirls) AS supportedGirls,
+
+                /* ✅ PADS DISPENSED */
+                SUM(
+                    CASE
+                        WHEN dh.event_type = '1'
+                        THEN dh.itemsDispensed
+                        ELSE 0
+                    END
+                ) AS padsDispensed,
+
+                /* ✅ LAST PAD DISPENSE DATE */
+                MAX(
+                    CASE
+                        WHEN dh.event_type = '1'
+                        THEN dh.createdAt
+                        ELSE NULL
+                    END
+                ) AS lastPadDispenseDate,
+
+                /* ✅ TOTAL REFILLS */
+                COUNT(
+                    CASE
+                        WHEN dh.event_type = '2'
+                        THEN 1
+                        ELSE NULL
+                    END
+                ) AS totalRefill,
+
+                /* ✅ LAST REFILL DATE */
+                MAX(
+                    CASE
+                        WHEN dh.event_type = '2'
+                        THEN dh.createdAt
+                        ELSE NULL
+                    END
+                ) AS lastRefillDate,
+
+                /* ✅ AVG CONSUMPTION */
+                ROUND(
+                    (
+                        SUM(
+                            CASE
+                                WHEN dh.event_type = '1'
+                                THEN dh.itemsDispensed
+                                ELSE 0
+                            END
+                        ) * 30
+                    ) /
+                    NULLIF(
+                        DATEDIFF(
+                            '${end}',
+                            MIN(dh.createdAt)
+                        ) * SUM(DISTINCT s.numberOfGirls),
+                        0
+                    ),
+                    2
+                ) AS avgConsumption
+
+            FROM DispenseHistories dh
+            JOIN Schools s
+                ON s.machineId = dh.machineId
+
+            WHERE ${whereConditions}
+
+            GROUP BY
+                dh.machineId,
+                s.state,
+                s.schoolDistrict,
+                s.schoolName,
+                s.schoolSpocName
+
+            ORDER BY dh.machineId ASC
+            `,
+            { type: Sequelize.QueryTypes.SELECT }
+        );
+
+        /* =============================
+           ✅ SUMMARY
+        ============================== */
+        const summary = {
+            period: `${startDate} to ${endDate}`,
+            numberOfDays: Math.ceil((new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24)) + 1,
+            numberOfStates: new Set(data.map(d => d.state)).size,
+            numberOfDistricts: new Set(data.map(d => d.schoolDistrict)).size,
+            numberOfMachinesInstalled: new Set(data.map(d => d.machineId)).size,
+            numberOfSchoolsCovered: new Set(data.map(d => d.schoolName)).size,
+            numberOfSupportedGirls: data.reduce((sum, d) => sum + Number(d.supportedGirls || 0), 0),
+            numberOfPadsDispensed: data.reduce((sum, d) => sum + Number(d.padsDispensed || 0), 0),
+            averageConsumptionPerGirl: (() => {
+                const totalGirls = data.reduce((sum, d) => sum + Number(d.supportedGirls || 0), 0);
+                const totalPads = data.reduce((sum, d) => sum + Number(d.padsDispensed || 0), 0);
+                return totalGirls ? +(totalPads / totalGirls).toFixed(2) : 0;
+            })(),
+            totalRefills: data.reduce((sum, d) => sum + Number(d.totalRefill || 0), 0),
+        };
+
+        /* ✅ RESPONSE (NO SUMMARY) */
+        res.status(200).json({
+            status: true,
+            data,
+            summary
+        });
+
+    } catch (error) {
+        console.error("machineWiseDispenseAndRefill", error);
+        res.status(500).json({
+            status: false,
+            message: "Server error",
+        });
+    }
+};
+
+exports.saveReport = async (req, res) => {
+    try {
+        const {
+            reportType,      // machine_wise_dispense | avg_consumption | state_district
+            reportName,
+            description,
+            filters,         // full filters object
+            summary          // summary object from frontend / backend
+        } = req.body;
+
+        const ownerId = req.user?.username || 1; // JWT se lo
+        const ownerName = req.user?.name || "System User";
+        const role = req.user?.role || "admin";
+        const roleId = req.user?.roleId || 1;
+
+        if (!reportType || !reportName || !filters) {
+            return res.status(400).json({
+                status: false,
+                message: "Missing required fields"
+            });
+        }
+
+        // ✅ description max 200 chars safety
+        const safeDescription = description
+            ? description.toString().substring(0, 200)
+            : null;
+
+        const result = await Sequelize.query(
+            `
+      INSERT INTO saved_reports
+      (
+        report_type,
+        report_name,
+        description, 
+        filters,
+        summary,
+        owner_id,
+        owner_name,
+        role,
+        roleId
+      )
+      VALUES
+      (
+        :reportType,
+        :reportName,
+        :description, 
+        :filters,
+        :summary,
+        :ownerId,
+        :ownerName,
+        :role,
+        :roleId
+      )
+      `,
+            {
+                replacements: {
+                    reportType,
+                    reportName,
+                    description: safeDescription,
+                    filters: JSON.stringify(filters),
+                    summary: JSON.stringify(summary || {}),
+                    ownerId,
+                    ownerName,
+                    role,
+                    roleId
+                },
+                type: Sequelize.QueryTypes.INSERT
+            }
+        );
+
+        res.status(201).json({
+            status: true,
+            message: "Report saved successfully",
+        });
+
+    } catch (error) {
+        console.error("saveReport error:", error);
+        res.status(500).json({
+            status: false,
+            message: "Server error while saving report"
+        });
+    }
+};
+
+exports.getSavedReports = async (req, res) => {
+    try {
+        const type = req.query.type; // admin | user | superadmin
+        const role = req.user?.role || "admin";
+        const ownerId = req.user?.username;
+
+        let roleCondition = "";
+        let replacements = {};
+
+        /* ================= SUPERADMIN ================= */
+        if (role === "superadmin") {
+            if (type === "admin") {
+                // sab admin reports
+                roleCondition = `WHERE role = 'admin'`;
+            }
+            else if (type === "user") {
+                // sab user reports
+                roleCondition = `WHERE role = 'user'`;
+            }
+            else {
+                // ✅ superadmin ke apne reports
+                roleCondition = `WHERE role = 'superadmin' AND owner_id = :ownerId`;
+                replacements.ownerId = ownerId;
+            }
+        }
+
+        /* ================= ADMIN ================= */
+        else if (role === "admin") {
+            if (type === "admin") {
+                // admin ke apne reports
+                roleCondition = `WHERE role = 'admin' AND owner_id = :ownerId`;
+                replacements.ownerId = ownerId;
+            }
+            else if (type === "user") {
+                // sab user reports
+                roleCondition = `WHERE role = 'user'`;
+            }
+        }
+
+        /* ================= USER ================= */
+        else if (role === "user") {
+            // sirf apne reports
+            roleCondition = `WHERE role = 'user' AND owner_id = :ownerId`;
+            replacements.ownerId = ownerId;
+        }
+
+        const reports = await Sequelize.query(
+            `
+      SELECT 
+        id,
+        report_type,
+        report_name,
+        description,
+        role,
+        owner_id,
+        owner_name,
+        created_at,
+        updated_at
+      FROM saved_reports
+      ${roleCondition}
+      ORDER BY created_at DESC
+      `,
+            {
+                replacements,
+                type: Sequelize.QueryTypes.SELECT,
+            }
+        );
+
+        res.status(200).json({
+            status: true,
+            data: reports,
+        });
+
+    } catch (error) {
+        console.error("getSavedReports", error);
+        res.status(500).json({
+            status: false,
+            message: "Failed to fetch saved reports",
+        });
+    }
+};
+exports.deleteSavedReport = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const result = await Sequelize.query(
+            `
+            DELETE FROM saved_reports
+            WHERE id = :id 
+            `,
+            {
+                replacements: { id },
+                type: Sequelize.QueryTypes.DELETE,
+            }
+        );
+
+        res.status(200).json({
+            status: true,
+            message: "Report deleted successfully",
+        });
+
+    } catch (error) {
+        console.error("deleteSavedReport", error);
+        res.status(500).json({
+            status: false,
+            message: "Failed to delete report",
+        });
+    }
+};
+
+exports.viewSavedReport = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const report = await Sequelize.query(
+            `
+            SELECT 
+                id,
+                report_type,
+                report_name,
+                description,
+                filters,
+                owner_id,
+                owner_name,
+                created_at
+            FROM saved_reports
+            WHERE id = :id
+            `,
+            {
+                replacements: { id },
+                type: Sequelize.QueryTypes.SELECT,
+            }
+        );
+
+        if (!report.length) {
+            return res.status(404).json({
+                status: false,
+                message: "Saved report not found",
+            });
+        }
+
+        const row = report[0];
+
+        res.status(200).json({
+            status: true,
+            data: {
+                id: row.id,
+                reportType: row.report_type,
+                reportName: row.report_name,
+                description: row.description,
+
+                // ✅ FIX HERE
+                filters: row.filters ? JSON.parse(row.filters) : {},
+
+                ownerName: row.owner_name,
+                createdAt: row.created_at,
+            },
+        });
+    } catch (error) {
+        console.error("viewSavedReport error:", error);
+        res.status(500).json({
+            status: false,
+            message: "Server error",
+        });
+    }
+};
+
+
+exports.updateSavedReport = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const {
+            reportName,
+            description,
+            filters,
+            summary
+        } = req.body;
+
+        const role = req.user?.role || "admin";
+        const roleId = req.user?.roleId || 1;
+
+        // ✅ description safety (max 200 chars)
+        const safeDescription = description
+            ? description.toString().substring(0, 200)
+            : null;
+
+        await Sequelize.query(
+            `
+            UPDATE saved_reports
+            SET
+                report_name = :reportName,
+                description = :description,
+                filters = :filters,
+                summary = :summary,
+                role = :role,
+                roleId = :roleId
+            WHERE id = :id
+            `,
+            {
+                replacements: {
+                    id,
+                    reportName,
+                    description: safeDescription,
+                    filters: JSON.stringify(filters),
+                    summary: JSON.stringify(summary || {}),
+                    role,
+                    roleId
+                },
+            }
+        );
+
+        const updated = await Sequelize.query(
+            `
+            SELECT 
+                id,
+                report_type,
+                report_name,
+                description,
+                filters,
+                summary,
+                owner_id,
+                owner_name,
+                role,
+                roleId
+            FROM saved_reports
+            WHERE id = :id
+            `,
+            {
+                replacements: { id },
+                type: Sequelize.QueryTypes.SELECT
+            }
+        );
+
+        res.json({
+            status: true,
+            data: updated[0],
+        });
+
+    } catch (e) {
+        console.error("updateSavedReport error:", e);
+        res.status(500).json({ status: false, message: "Server error" });
+    }
+};
+
+
+// Dispense Report
+exports.dispenseReport = async (req, res) => {
+    try {
+        const {
+            level = "national", // national | state | district | block | school
+            startDate,
+            endDate,
+        } = req.body;
+
+        if (!startDate || !endDate) {
+            return res.status(400).json({
+                status: false,
+                message: "startDate and endDate are required",
+            });
+        }
+
+        const start = `${startDate} 00:00:00`;
+        const end = `${endDate} 23:59:59`;
+
+        const numberOfDays =
+            Math.ceil(
+                (new Date(endDate) - new Date(startDate)) /
+                (1000 * 60 * 60 * 24)
+            ) + 1;
+
+        /* =============================
+           WHERE CONDITION (DATE ONLY)
+        ============================== */
+        const whereConditions = `
+      dh.createdAt BETWEEN :start AND :end
+    `;
+
+        /* =============================
+           LEVEL CONFIGURATION
+        ============================== */
+        let levelSelect = `'National' AS level`;
+        let groupBy = ``;
+
+        if (level === "state") {
+            levelSelect = `TRIM(s.state) AS level`;
+            groupBy = `GROUP BY TRIM(s.state)`;
+        }
+
+        if (level === "district") {
+            levelSelect = `TRIM(s.schoolDistrict) AS level`;
+            groupBy = `GROUP BY TRIM(s.schoolDistrict)`;
+        }
+
+        if (level === "block") {
+            levelSelect = `
+        CONCAT(TRIM(s.schoolBlock), '_', TRIM(s.schoolDistrict)) AS level
+      `;
+            groupBy = `GROUP BY TRIM(s.schoolBlock), TRIM(s.schoolDistrict)`;
+        }
+
+        if (level === "school") {
+            levelSelect = `
+        CONCAT(TRIM(s.machineId), '_', TRIM(s.schoolName)) AS level
+      `;
+            groupBy = `GROUP BY TRIM(s.machineId), TRIM(s.schoolName)`;
+        }
+
+        /* =============================
+           MAIN QUERY
+        ============================== */
+        const data = await Sequelize.query(
+            `
+      SELECT
+        ${levelSelect},
+
+        :numberOfDays AS days,
+
+        /* SCHOOLGIRLS */
+        SUM(DISTINCT s.numberOfGirls) AS schoolgirls,
+
+        /* MACHINES INSTALLED */
+        COUNT(DISTINCT s.machineId) AS machinesInstalled,
+
+        /* SCHOOLS */
+        COUNT(DISTINCT s.schoolName) AS schools,
+
+        /* PADS DISPENSED */
+        SUM(dh.itemsDispensed) AS padsDispensed,
+
+        /* CONSUMPTION RATE */
+        ROUND(
+          SUM(dh.itemsDispensed) /
+          NULLIF(SUM(DISTINCT s.numberOfGirls), 0),
+          2
+        ) AS consumptionRate
+
+      FROM DispenseHistories dh
+      JOIN Schools s
+        ON s.machineId = dh.machineId
+
+      WHERE ${whereConditions}
+
+      ${groupBy}
+
+      ORDER BY level ASC
+      `,
+            {
+                type: Sequelize.QueryTypes.SELECT,
+                replacements: {
+                    start,
+                    end,
+                    numberOfDays,
+                },
+            }
+        );
+
+        /* =============================
+           SUMMARY
+        ============================== */
+        const summary = {
+            period: `${startDate} to ${endDate}`,
+            numberOfDays,
+            totalSchoolgirls: data.reduce(
+                (sum, d) => sum + Number(d.schoolgirls || 0),
+                0
+            ),
+            totalMachinesInstalled: data.reduce(
+                (sum, d) => sum + Number(d.machinesInstalled || 0),
+                0
+            ),
+            totalSchools: data.reduce(
+                (sum, d) => sum + Number(d.schools || 0),
+                0
+            ),
+            totalPadsDispensed: data.reduce(
+                (sum, d) => sum + Number(d.padsDispensed || 0),
+                0
+            ),
+            averageConsumptionRate: (() => {
+                const girls = data.reduce(
+                    (sum, d) => sum + Number(d.schoolgirls || 0),
+                    0
+                );
+                const pads = data.reduce(
+                    (sum, d) => sum + Number(d.padsDispensed || 0),
+                    0
+                );
+                return girls ? +(pads / girls).toFixed(2) : 0;
+            })(),
+        };
+
+        res.status(200).json({
+            status: true,
+            level,
+            data,
+            summary,
+        });
+    } catch (error) {
+        console.error("dispenseReport", error);
+        res.status(500).json({
+            status: false,
+            message: "Server error",
+        });
+    }
+};
+
+
+// Last Activity Report (No Filters)
+exports.lastActivityReport = async (req, res) => {
+    try {
+        const data = await Sequelize.query(
+            `
+      SELECT
+        dh.machineId,
+        s.schoolName,
+
+        /* ✅ LAST DISPENSE DATE */
+        MAX(
+          CASE
+            WHEN dh.event_type = '1'
+            THEN dh.createdAt
+            ELSE NULL
+          END
+        ) AS lastDispenseDate,
+
+        /* ✅ LAST REFILL DATE */
+        MAX(
+          CASE
+            WHEN dh.event_type = '2'
+            THEN dh.createdAt
+            ELSE NULL
+          END
+        ) AS lastRefillDate
+
+      FROM DispenseHistories dh
+      JOIN Schools s
+        ON s.machineId = dh.machineId
+
+      GROUP BY
+        dh.machineId,
+        s.schoolName
+
+      ORDER BY dh.machineId ASC
+      `,
+            { type: Sequelize.QueryTypes.SELECT }
+        );
+
+        res.status(200).json({
+            status: true,
+            data
+        });
+
+    } catch (error) {
+        console.error("lastActivityReport error:", error);
+        res.status(500).json({
+            status: false,
+            message: "Server error"
         });
     }
 };

@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../../modules/sequelize');
+const Role = require('./roleModel');
 
 const LoginDetail = sequelize.define('LoginDetail', {
     username: {
@@ -19,11 +20,22 @@ const LoginDetail = sequelize.define('LoginDetail', {
         type: DataTypes.STRING,
         allowNull: false,
     },
+    // Optional display value
     role: {
-        type: DataTypes.ENUM('admin', 'user', 'manager'),
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
+    roleId: {
+        type: DataTypes.INTEGER,
         allowNull: true,
     },
 });
+
+/* =======================
+   Associations
+======================= */
+LoginDetail.belongsTo(Role, { foreignKey: 'roleId' });
+Role.hasMany(LoginDetail, { foreignKey: 'roleId' });
 
 LoginDetail.sync()
     .then(() => {

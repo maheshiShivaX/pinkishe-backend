@@ -18,6 +18,11 @@ const DispenseHistory = sequelize.define('DispenseHistory', {
     itemsDispensed: {
         type: DataTypes.INTEGER,
         allowNull: true,
+    },
+    manualPads: {                 // <-- Add this column
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: null,       // <-- default null
     }
 });
 

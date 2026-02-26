@@ -2,6 +2,7 @@ const http = require('http');
 const express = require('express');
 const path = require('path'); 
 const stockRoutes = require('../routes/stockRoutes');  
+const roleRoutes = require('../routes/roleRoutes');  
 const authRoutes = require('../routes/authRoutes'); 
 const cors = require('cors');
 const app = express();
@@ -26,6 +27,7 @@ app.use(express.json());
 
 // Use dataRoutes for the API routes
 app.use('/api', stockRoutes);
+app.use('/api', roleRoutes);
 app.use('/api/auth', authRoutes);
 const server = http.createServer(app);
 

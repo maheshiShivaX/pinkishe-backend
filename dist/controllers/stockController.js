@@ -167,7 +167,7 @@ exports.handleEvent = /*#__PURE__*/function () {
         case 49:
           _context.prev = 49;
           _context.t0 = _context["catch"](0);
-          console.log(_context.t0);
+          // console.log(_context.t0);
           res.status(500).send({
             success: false,
             message: 'Error processing the request',
@@ -253,7 +253,7 @@ exports.getDispenseHistory = /*#__PURE__*/function () {
         case 30:
           _context2.prev = 30;
           _context2.t1 = _context2["catch"](0);
-          console.log(_context2.t1);
+          // console.log(_context2.t1);
           return _context2.abrupt("return", res.status(500).send({
             success: false,
             message: 'Error retrieving dispense history',
@@ -302,7 +302,7 @@ exports.getDispenseHistoryForMachineId = /*#__PURE__*/function () {
         case 10:
           _context3.prev = 10;
           _context3.t0 = _context3["catch"](0);
-          console.log(_context3.t0);
+          // console.log(_context3.t0);
           return _context3.abrupt("return", res.status(500).send({
             success: false,
             message: 'Error retrieving dispense history',
@@ -384,7 +384,7 @@ exports.getAllVendingMachine = /*#__PURE__*/function () {
         case 29:
           _context4.prev = 29;
           _context4.t1 = _context4["catch"](0);
-          console.log(_context4.t1);
+          // console.log(_context4.t1);
           return _context4.abrupt("return", res.status(500).send({
             success: false,
             message: 'Error retrieving vending machine data',
@@ -427,7 +427,7 @@ exports.getAllGeoLocations = /*#__PURE__*/function () {
         case 9:
           _context5.prev = 9;
           _context5.t0 = _context5["catch"](0);
-          console.log(_context5.t0);
+          // console.log(_context5.t0);
           return _context5.abrupt("return", res.status(500).send({
             success: false,
             message: 'Error retrieving geolocation data',
@@ -474,7 +474,7 @@ exports.deleteGeoLocation = /*#__PURE__*/function () {
         case 12:
           _context6.prev = 12;
           _context6.t0 = _context6["catch"](0);
-          console.log(_context6.t0);
+          // console.log(_context6.t0);
           return _context6.abrupt("return", res.status(500).send({
             success: false,
             message: 'Error deleting geolocation data',
@@ -517,7 +517,7 @@ exports.getAllSchool = /*#__PURE__*/function () {
         case 9:
           _context7.prev = 9;
           _context7.t0 = _context7["catch"](0);
-          console.log(_context7.t0);
+          // console.log(_context7.t0);
           return _context7.abrupt("return", res.status(500).send({
             success: false,
             message: 'Error retrieving school data',
@@ -564,7 +564,7 @@ exports.getAllUsers = /*#__PURE__*/function () {
         case 9:
           _context8.prev = 9;
           _context8.t0 = _context8["catch"](0);
-          console.log(_context8.t0);
+          // console.log(_context8.t0);
           return _context8.abrupt("return", res.status(500).send({
             success: false,
             message: 'Error retrieving user data',
@@ -689,7 +689,7 @@ exports.getDashboardData = /*#__PURE__*/function () {
           _context9.next = 26;
           break;
         case 41:
-          console.log(monthlyConsumptionData);
+          // console.log(monthlyConsumptionData);
           _context9.next = 44;
           return GeoLocation.count({
             distinct: true,
@@ -740,7 +740,7 @@ exports.getDashboardData = /*#__PURE__*/function () {
         case 58:
           _context9.prev = 58;
           _context9.t0 = _context9["catch"](0);
-          console.log(_context9.t0);
+          // console.log(_context9.t0);
           return _context9.abrupt("return", res.status(500).send({
             success: false,
             message: 'Error retrieving vending machine data',
@@ -783,7 +783,7 @@ exports.getAllNgoSpocs = /*#__PURE__*/function () {
         case 9:
           _context10.prev = 9;
           _context10.t0 = _context10["catch"](0);
-          console.log(_context10.t0);
+          // console.log(_context10.t0);
           return _context10.abrupt("return", res.status(500).send({
             success: false,
             message: 'Error retrieving NGO SPOCs',
@@ -840,7 +840,7 @@ exports.createNgoSpoc = /*#__PURE__*/function () {
             error: _context11.t0
           }));
         case 14:
-          console.log(_context11.t0);
+          // console.log(_context11.t0);
           return _context11.abrupt("return", res.status(500).send({
             success: false,
             message: 'Error creating NGO SPOC',
@@ -887,7 +887,7 @@ exports.deleteNgoSpoc = /*#__PURE__*/function () {
         case 12:
           _context12.prev = 12;
           _context12.t0 = _context12["catch"](1);
-          console.log(_context12.t0);
+          // console.log(_context12.t0);
           return _context12.abrupt("return", res.status(500).send({
             success: false,
             message: 'Error deleting NGO SPOC',

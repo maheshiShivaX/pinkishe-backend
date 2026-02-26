@@ -79,72 +79,73 @@ const LoginDetail = require('../models/loginDetail')
 
 
 
-async function Createlogindetail(name, mobileNo, emailId, role) {
-    try {
-       
-        // Use Sequelize to create a new entry in the logindetail table
-        const loginDetail = await LoginDetail.create({
-            username: mobileNo,  // Assuming UserName is meant to be mobileNo here
-            name: name,
-            mobileNo: mobileNo,
-            emailId: emailId,
-            role: role
-        });
+async function Createlogindetail(name, mobileNo, emailId, role, roleId) {
+  try {
 
-        return { insertId: loginDetail.dataValues.username }; // Sequelize automatically creates an id field if your model has one
-    } catch (err) {
-        console.error('Error creating login detail:', err);
-        throw err;
-    }
+    // Use Sequelize to create a new entry in the logindetail table
+    const loginDetail = await LoginDetail.create({
+      username: mobileNo,  // Assuming UserName is meant to be mobileNo here
+      name: name,
+      mobileNo: mobileNo,
+      emailId: emailId,
+      role: role,
+      roleId
+    });
+
+    return { insertId: loginDetail.dataValues.username }; // Sequelize automatically creates an id field if your model has one
+  } catch (err) {
+    console.error('Error creating login detail:', err);
+    throw err;
+  }
 }
 
 
 // db.FindUserByUsername(username)
 const FindUserByUsername = async (username) => {
-    try {
-      // Assuming you have a `User` model in Sequelize
-      const user = await LoginDetail.findOne({
-        where: {
-          username: username
-        }
-      });
-  
-      // If the user is not found, return null
-      if (!user) {
-        return null;
+  try {
+    // Assuming you have a `User` model in Sequelize
+    const user = await LoginDetail.findOne({
+      where: {
+        username: username
       }
-  
-      return user;
-    } catch (error) {
-      console.error('Error finding user by username:', error);
-      throw new Error('Error finding user by username');
+    });
+
+    // If the user is not found, return null
+    if (!user) {
+      return null;
     }
-  };
-  
+
+    return user;
+  } catch (error) {
+    console.error('Error finding user by username:', error);
+    throw new Error('Error finding user by username');
+  }
+};
 
 
-  // db.DeleteUserByUsername(username)
+
+// db.DeleteUserByUsername(username)
 const DeleteUserByUsername = async (username) => {
-    try {
-      // Assuming you have a `User` model in Sequelize
-      const result = await LoginDetail.destroy({
-        where: {
-          username: username
-        }
-      });
-  
-      // If the result is 0, no rows were deleted (user not found)
-      if (result === 0) {
-        return null;
+  try {
+    // Assuming you have a `User` model in Sequelize
+    const result = await LoginDetail.destroy({
+      where: {
+        username: username
       }
-  
-      return true;  // Successfully deleted the user
-    } catch (error) {
-      console.error('Error deleting user by username:', error);
-      throw new Error('Error deleting user by username');
+    });
+
+    // If the result is 0, no rows were deleted (user not found)
+    if (result === 0) {
+      return null;
     }
-  };
-  
+
+    return true;  // Successfully deleted the user
+  } catch (error) {
+    console.error('Error deleting user by username:', error);
+    throw new Error('Error deleting user by username');
+  }
+};
+
 
 // async function updateProfileDetail(name, gender, dob, emailId, loginId, imagePath) {
 //     try {
@@ -291,19 +292,19 @@ const DeleteUserByUsername = async (username) => {
 
 
 async function ChecExist(mobileNo) {
-    try {
-       
-        const result = await LoginDetail.findOne({
-            where: {
-                mobileNo: mobileNo
-            }
-        });
-        return result; 
-    } catch (err) {
-        console.error('Error checking existence:', err);
-        // logger.error('Error checking existence: ' + err.message);
-        throw err;
-    }
+  try {
+
+    const result = await LoginDetail.findOne({
+      where: {
+        mobileNo: mobileNo
+      }
+    });
+    return result;
+  } catch (err) {
+    console.error('Error checking existence:', err);
+    // logger.error('Error checking existence: ' + err.message);
+    throw err;
+  }
 }
 // async function getlogindetail(emailId) {
 //     try {
@@ -358,4 +359,4 @@ async function ChecExist(mobileNo) {
 
 // module.exports = {ChecExist,fatchloginDetailByMobileNo,fatchloginDetailbyloginId, fatchloginDetail, Createlogindetail, updateProfileDetail,deleteaccountByLoginId,
 //      updateotp, updatepassword, getlogindetail, resetepassword, saveeotp, getOtpByEmail, deleteOtpByEmail,fatchuserDetail,updatedevicetoken };
-module.exports = { ChecExist, Createlogindetail, FindUserByUsername,DeleteUserByUsername};
+module.exports = { ChecExist, Createlogindetail, FindUserByUsername, DeleteUserByUsername };

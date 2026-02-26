@@ -22,7 +22,7 @@ var LoginDetail = sequelize.define('LoginDetail', {
     allowNull: false
   },
   role: {
-    type: DataTypes.ENUM('admin', 'user', 'manager'),
+    type: DataTypes.ENUM('superadmin', 'admin', 'user', 'manager'),
     allowNull: true
   }
 });

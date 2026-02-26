@@ -5,7 +5,7 @@ var authorizeRoles = function authorizeRoles() {
     allowedRoles[_key] = arguments[_key];
   }
   return function (req, res, next) {
-    console.log("in middleware currently:", req);
+    // console.log("in middleware currently:", req);
     if (!allowedRoles.includes(req.user.role)) {
       return res.status(403).json({
         message: "Access denied"

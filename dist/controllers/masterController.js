@@ -15,9 +15,9 @@ var saveOrganisation = /*#__PURE__*/function () {
       while (1) switch (_context.prev = _context.next) {
         case 0:
           _req$body = req.body, organisationName = _req$body.organisationName, organisationType = _req$body.organisationType;
-          console.log("printing organisation Type :", req.body);
-          console.log("printing organisation Name :", organisationName);
-          console.log("printing organisation Type :", organisationType);
+          // console.log("printing organisation Type :", req.body);
+          // console.log("printing organisation Name :", organisationName);
+          // console.log("printing organisation Type :", organisationType);
           if (!(!organisationName || !organisationType)) {
             _context.next = 6;
             break;
@@ -62,7 +62,7 @@ var saveVendingMachine = /*#__PURE__*/function () {
       while (1) switch (_context2.prev = _context2.next) {
         case 0:
           _req$body2 = req.body, machineId = _req$body2.machineId, gsmModuleImei = _req$body2.gsmModuleImei, vendorName = _req$body2.vendorName, simCardNumber = _req$body2.simCardNumber, padCapacity = _req$body2.padCapacity, status = _req$body2.status;
-          console.log("Machine Details:", req.body);
+          // console.log("Machine Details:", req.body);
           if (!(!machineId || !gsmModuleImei || !vendorName || !simCardNumber || !padCapacity || !status)) {
             _context2.next = 4;
             break;
@@ -112,7 +112,7 @@ var updateVendingMachine = /*#__PURE__*/function () {
         case 0:
           machineId = req.params.machineId;
           _req$body3 = req.body, gsmModuleImei = _req$body3.gsmModuleImei, vendorName = _req$body3.vendorName, simCardNumber = _req$body3.simCardNumber, padCapacity = _req$body3.padCapacity, status = _req$body3.status;
-          console.log("Updated Machine Details:", req.body);
+          // console.log("Updated Machine Details:", req.body);
           if (!(!gsmModuleImei || !vendorName || !simCardNumber || !padCapacity || !status)) {
             _context3.next = 5;
             break;
@@ -176,7 +176,7 @@ var saveSchool = /*#__PURE__*/function () {
       while (1) switch (_context4.prev = _context4.next) {
         case 0:
           _req$body4 = req.body, schoolName = _req$body4.schoolName, schoolAddress = _req$body4.schoolAddress, schoolBlock = _req$body4.schoolBlock, schoolDistrict = _req$body4.schoolDistrict, state = _req$body4.state, pinCode = _req$body4.pinCode, geoLocation = _req$body4.geoLocation, numberOfGirls = _req$body4.numberOfGirls, schoolSpocName = _req$body4.schoolSpocName, ngoSpocName = _req$body4.ngoSpocName;
-          console.log("Received school data: ", req.body);
+          // console.log("Received school data: ", req.body);
           if (!(!schoolName || !schoolAddress || !schoolBlock || !schoolDistrict || !state || !pinCode || !geoLocation || !numberOfGirls || !schoolSpocName || !ngoSpocName)) {
             _context4.next = 4;
             break;
@@ -229,7 +229,7 @@ var saveMachineAllocation = /*#__PURE__*/function () {
       while (1) switch (_context5.prev = _context5.next) {
         case 0:
           _req$body5 = req.body, schoolId = _req$body5.schoolId, machineId = _req$body5.machineId;
-          console.log("Received machine allocation data: ", req.body);
+          // console.log("Received machine allocation data: ", req.body);
           if (!(!schoolId || !machineId)) {
             _context5.next = 4;
             break;
@@ -256,7 +256,7 @@ var saveMachineAllocation = /*#__PURE__*/function () {
             message: 'School not found or machine already assigned'
           }));
         case 10:
-          console.log("founded school:", school);
+          // console.log("founded school:", school);
 
           // Step 2: Update the Machine collection where machineId matches
           _context5.next = 13;

@@ -38,8 +38,8 @@ const sendLowStockAlertSMS = async (mobileNumbers, machineId) => {
     const hindiTemplateId = "1707174677478112953";
 
 
-    console.log("📟 Machine ID:", machineId);
-    console.log("📱 Mobile Numbers:", mobileNumbers);
+    // console.log("📟 Machine ID:", machineId);
+    // console.log("📱 Mobile Numbers:", mobileNumbers);
 
     for (const number of mobileNumbers.filter(Boolean)) {
         // Send English SMS
@@ -57,7 +57,7 @@ const sendLowStockAlertSMS = async (mobileNumbers, machineId) => {
 
         try {
             const hinRes = await axios.get(hindiUrl);
-            console.log(`✅ Hindi SMS sent to ${number}:`, hinRes.data);
+            // console.log(`✅ Hindi SMS sent to ${number}:`, hinRes.data);
         } catch (error) {
             console.error(`❌ Failed to send Hindi SMS to ${number}:`, error.message);
         }
@@ -66,7 +66,7 @@ const sendLowStockAlertSMS = async (mobileNumbers, machineId) => {
         // Send WhatsApp Message
         const whatsappUrl = `${whatsappBaseUrl}?sender=Pinkishe&to=${number}&templateid=1894194418000583&bodyVariables=${machineId}`;
 
-        console.log("printing whatapp url here:",whatsappUrl)
+        // console.log("printing whatapp url here:",whatsappUrl)
 
         try {
             const waRes = await axios.get(whatsappUrl);
