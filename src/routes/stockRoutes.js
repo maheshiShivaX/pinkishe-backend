@@ -72,6 +72,7 @@ router.post('/reports/machine-wise-dispense-refill', verifyToken, authorizeRoles
 router.post('/reports/avgconsumption-comparison-report', verifyToken, authorizeRoles("superadmin", "admin", "user"), stockController.avgConsumptionComparisonReport);
 router.post('/reports/save', verifyToken, authorizeRoles("superadmin", "admin", "user"), stockController.saveReport);
 router.get('/reports/getReports', verifyToken, authorizeRoles("superadmin", "admin", "user"), stockController.getSavedReports);
+router.post('/reports/getStandardReports', verifyToken, authorizeRoles("superadmin", "admin", "user"), stockController.getStandardReports);
 router.delete('/reports/deleteSavedReport/:id', verifyToken, authorizeRoles("superadmin", "admin", "user"), stockController.deleteSavedReport);
 router.get('/reports/viewSavedReport/:id', verifyToken, authorizeRoles("superadmin", "admin", "user"), stockController.viewSavedReport);
 router.put('/reports/updateSavedReport/:id', verifyToken, authorizeRoles("superadmin", "admin", "user"), stockController.updateSavedReport);

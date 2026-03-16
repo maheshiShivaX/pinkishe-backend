@@ -89,13 +89,10 @@ exports.handleEvent = async (req, res) => {
             await stockRecord.save();
 
 
-            console.log("printing the remaining stock here:", remaingStock);
-
 
 
             // ðŸš¨ Trigger SMS if stock goes below threshold
             if (remaingStock < 10) {
-                console.log("printing the remaining stock inside:", remaingStock);
                 const school = await School.findOne({ where: { machineId } });
 
                 if (school) {
@@ -178,7 +175,6 @@ exports.handleEvent = async (req, res) => {
             message: "Invalid event_type provided."
         });
     } catch (error) {
-        console.log(error);
         res.status(500).send({
             success: false,
             message: 'Error processing the request',
@@ -832,232 +828,467 @@ exports.handleEvent = async (req, res) => {
 // };
 
 
+// exports.getDispenseHistory = async (req, res) => {
+//     try {
+//         const page = parseInt(req.query.page) || 1; // 1-based index
+//         const pageSize = parseInt(req.query.pageSize) || 100;
+//         const offset = (page - 1) * pageSize;
+
+//         const { startDate, endDate, filters } = req.query;
+
+//         // Base where clause
+//         const whereClause = {
+//             itemsDispensed: { [Op.not]: null },
+//         };
+
+//         // Date filters
+//         if (startDate && endDate) {
+//             whereClause.createdAt = {
+//                 [Op.between]: [
+//                     new Date(`${startDate}T00:00:00Z`),
+//                     new Date(`${endDate}T23:59:59Z`),
+//                 ],
+//             };
+//         } else if (startDate) {
+//             whereClause.createdAt = { [Op.gte]: new Date(startDate) };
+//         } else if (endDate) {
+//             whereClause.createdAt = { [Op.lte]: new Date(endDate) };
+//         }
+
+//         // Parse school filters
+//         let schoolWhere = {};
+//         if (filters) {
+//             const parsedFilters = JSON.parse(filters);
+//             parsedFilters.forEach((f) => {
+//                 if (f.field === "schoolState" && f.value) {
+//                     schoolWhere.state = { [Op.like]: `%${f.value}%` };
+//                 }
+//                 if (f.field === "schoolDistrict" && f.value) {
+//                     schoolWhere.schoolDistrict = { [Op.like]: `%${f.value}%` };
+//                 }
+//             });
+//         }
+
+//         // Fetch extra records to ensure filtered results fit in page
+//         const fetchSize = pageSize * 5; // fetch 5x to account for filtering
+//         const dispenseHistoryBatch = await DispenseHistory.findAll({
+//             where: whereClause,
+//             order: [["createdAt", "DESC"]],
+//             limit: fetchSize,
+//             offset,
+//         });
+
+//         if (!dispenseHistoryBatch.length) {
+//             return res.status(404).json({
+//                 success: false,
+//                 message: "No dispense history records found for the given filters.",
+//             });
+//         }
+
+//         // Map school data
+//         const machineIds = dispenseHistoryBatch.map((d) => d.machineId).filter(Boolean);
+//         let schoolMap = {};
+//         if (machineIds.length > 0) {
+//             const schools = await School.findAll({
+//                 where: {
+//                     machineId: machineIds,
+//                     ...schoolWhere,
+//                 },
+//             });
+//             schools.forEach((s) => {
+//                 schoolMap[s.machineId] = s.dataValues;
+//             });
+//         }
+
+//         // Attach school and filter
+//         let filteredDispenseHistory = dispenseHistoryBatch.filter((disp) => {
+//             if (disp.machineId && schoolMap[disp.machineId]) {
+//                 disp.dataValues.school = schoolMap[disp.machineId];
+//                 return true;
+//             }
+//             return Object.keys(schoolWhere).length === 0; // keep if no school filter
+//         });
+
+//         // Slice to exact pageSize
+//         filteredDispenseHistory = filteredDispenseHistory.slice(0, pageSize);
+
+//         if (!filteredDispenseHistory.length) {
+//             return res.status(404).json({
+//                 success: false,
+//                 message: "No dispense history records found for the given filters.",
+//             });
+//         }
+
+//         // Total count (all DispenseHistory ignoring school filter)
+//         const totalCount = await DispenseHistory.count({ where: whereClause });
+
+//         return res.status(200).json({
+//             success: true,
+//             data: filteredDispenseHistory,
+//             total: totalCount,
+//             page,
+//             pageSize,
+//         });
+//     } catch (error) {
+//         console.error(error);
+//         return res.status(500).json({
+//             success: false,
+//             message: "Error retrieving dispense history",
+//             error: error.message,
+//         });
+//     }
+// };
+
+
+
+
 exports.getDispenseHistory = async (req, res) => {
-    try {
-        const page = parseInt(req.query.page) || 1; // 1-based index
-        const pageSize = parseInt(req.query.pageSize) || 100;
-        const offset = (page - 1) * pageSize;
+  try {
+    const page = parseInt(req.query.page, 10) || 1;
+    const pageSize = parseInt(req.query.pageSize, 10) || 100;
+    const offset = (page - 1) * pageSize;
 
-        const { startDate, endDate, filters } = req.query;
+    const { startDate, endDate, filters } = req.query;
 
-        // Base where clause
-        const whereClause = {
-            itemsDispensed: { [Op.not]: null },
+    const whereClause = {
+      itemsDispensed: { [Op.not]: null },
+    };
+
+    // Date filters
+    if (startDate && endDate) {
+      whereClause.createdAt = {
+        [Op.between]: [
+          new Date(`${startDate}T00:00:00.000Z`),
+          new Date(`${endDate}T23:59:59.999Z`),
+        ],
+      };
+    } else if (startDate) {
+      whereClause.createdAt = {
+        [Op.gte]: new Date(`${startDate}T00:00:00.000Z`),
+      };
+    } else if (endDate) {
+      whereClause.createdAt = {
+        [Op.lte]: new Date(`${endDate}T23:59:59.999Z`),
+      };
+    }
+
+    // Map frontend fields -> DB fields
+    const schoolFieldMap = {
+      schoolName: "schoolName",
+      schoolState: "state",
+      schoolDistrict: "schoolDistrict",
+      schoolBlock: "schoolBlock",
+      schoolSpocName: "schoolSpocName",
+      ngoSpocName: "ngoSpocName",
+    };
+
+    const dispenseFieldMap = {
+      id: "id",
+      machineId: "machineId",
+      itemsDispensed: "itemsDispensed",
+      stock: "stock",
+      createdAt: "createdAt",
+      event_type: "event_type",
+    };
+
+    const schoolWhere = {};
+
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+
+      parsedFilters.forEach((f) => {
+        if (!f?.field || f?.value === undefined || f?.value === null || f?.value === "") {
+          return;
+        }
+
+        const rawValue = String(f.value).trim();
+        const operator = f.operator || "contains";
+
+        const buildCondition = (value, operatorType) => {
+          switch (operatorType) {
+            case "equals":
+              return { [Op.eq]: value };
+
+            case "startsWith":
+              return { [Op.like]: `${value}%` };
+
+            case "endsWith":
+              return { [Op.like]: `%${value}` };
+
+            case "is":
+              return { [Op.eq]: value };
+
+            case "not":
+              return { [Op.ne]: value };
+
+            case "contains":
+            default:
+              return { [Op.like]: `%${value}%` };
+          }
         };
 
-        // Date filters
-        if (startDate && endDate) {
-            whereClause.createdAt = {
-                [Op.between]: [
-                    new Date(`${startDate}T00:00:00Z`),
-                    new Date(`${endDate}T23:59:59Z`),
-                ],
-            };
-        } else if (startDate) {
-            whereClause.createdAt = { [Op.gte]: new Date(startDate) };
-        } else if (endDate) {
-            whereClause.createdAt = { [Op.lte]: new Date(endDate) };
+        if (dispenseFieldMap[f.field]) {
+          whereClause[dispenseFieldMap[f.field]] = buildCondition(rawValue, operator);
         }
 
-        // Parse school filters
-        let schoolWhere = {};
-        if (filters) {
-            const parsedFilters = JSON.parse(filters);
-            parsedFilters.forEach((f) => {
-                if (f.field === "schoolState" && f.value) {
-                    schoolWhere.state = { [Op.like]: `%${f.value}%` };
-                }
-                if (f.field === "schoolDistrict" && f.value) {
-                    schoolWhere.schoolDistrict = { [Op.like]: `%${f.value}%` };
-                }
-            });
+        if (schoolFieldMap[f.field]) {
+          schoolWhere[schoolFieldMap[f.field]] = buildCondition(rawValue, operator);
         }
-
-        // Fetch extra records to ensure filtered results fit in page
-        const fetchSize = pageSize * 5; // fetch 5x to account for filtering
-        const dispenseHistoryBatch = await DispenseHistory.findAll({
-            where: whereClause,
-            order: [["createdAt", "DESC"]],
-            limit: fetchSize,
-            offset,
-        });
-
-        if (!dispenseHistoryBatch.length) {
-            return res.status(404).json({
-                success: false,
-                message: "No dispense history records found for the given filters.",
-            });
-        }
-
-        // Map school data
-        const machineIds = dispenseHistoryBatch.map((d) => d.machineId).filter(Boolean);
-        let schoolMap = {};
-        if (machineIds.length > 0) {
-            const schools = await School.findAll({
-                where: {
-                    machineId: machineIds,
-                    ...schoolWhere,
-                },
-            });
-            schools.forEach((s) => {
-                schoolMap[s.machineId] = s.dataValues;
-            });
-        }
-
-        // Attach school and filter
-        let filteredDispenseHistory = dispenseHistoryBatch.filter((disp) => {
-            if (disp.machineId && schoolMap[disp.machineId]) {
-                disp.dataValues.school = schoolMap[disp.machineId];
-                return true;
-            }
-            return Object.keys(schoolWhere).length === 0; // keep if no school filter
-        });
-
-        // Slice to exact pageSize
-        filteredDispenseHistory = filteredDispenseHistory.slice(0, pageSize);
-
-        if (!filteredDispenseHistory.length) {
-            return res.status(404).json({
-                success: false,
-                message: "No dispense history records found for the given filters.",
-            });
-        }
-
-        // Total count (all DispenseHistory ignoring school filter)
-        const totalCount = await DispenseHistory.count({ where: whereClause });
-
-        return res.status(200).json({
-            success: true,
-            data: filteredDispenseHistory,
-            total: totalCount,
-            page,
-            pageSize,
-        });
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({
-            success: false,
-            message: "Error retrieving dispense history",
-            error: error.message,
-        });
+      });
     }
+
+    const include = [
+      {
+        model: School,
+        as: "school",
+        required: Object.keys(schoolWhere).length > 0,
+        where: Object.keys(schoolWhere).length > 0 ? schoolWhere : undefined,
+      },
+    ];
+
+    const { rows, count } = await DispenseHistory.findAndCountAll({
+      where: whereClause,
+      include,
+      order: [["createdAt", "DESC"]],
+      limit: pageSize,
+      offset,
+      distinct: true,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: rows,
+      total: count,
+      page,
+      pageSize,
+    });
+  } catch (error) {
+    console.error("getDispenseHistory error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error retrieving dispense history",
+      error: error.message,
+    });
+  }
 };
+
+
+
+// exports.getDispenseHistoryExportData = async (req, res) => {
+//     try {
+//         const { startDate, endDate, filters } = req.query;
+
+//         // ✅ where clause for dispense history
+//         const whereClause = {
+//             itemsDispensed: { [Op.not]: null },
+//         };
+
+//         // ✅ date filters
+//         if (startDate && endDate) {
+//             const start = dayjs(startDate).startOf("day").toDate(); // local start
+//             const end = dayjs(endDate).endOf("day").toDate();       // local end
+//             whereClause.createdAt = { [Op.between]: [start, end] };
+//         }
+//         else if (startDate) {
+//             whereClause.createdAt = { [Op.gte]: new Date(startDate) };
+//         } else if (endDate) {
+//             whereClause.createdAt = { [Op.lte]: new Date(endDate) };
+//         }
+
+//         // ✅ parse DataGrid filters
+//         let schoolWhere = {};
+//         if (filters) {
+//             const parsedFilters = JSON.parse(filters); // DataGrid sends array
+//             parsedFilters.forEach(f => {
+//                 if (f.field === "schoolState" && f.value) {
+//                     schoolWhere.state = { [Op.like]: `%${f.value}%` };
+//                 }
+//                 if (f.field === "schoolDistrict" && f.value) {
+//                     schoolWhere.schoolDistrict = { [Op.like]: `%${f.value}%` };
+//                 }
+//             });
+//         }
+
+//         const chunkSize = 500;
+//         let offset = 0;
+//         let allResults = [];
+
+//         while (true) {
+//             const batch = await DispenseHistory.findAll({
+//                 where: whereClause,
+//                 order: [["createdAt", "DESC"]],
+//                 limit: chunkSize,
+//                 offset,
+//             });
+
+//             if (batch.length === 0) break;
+
+//             const machineIds = batch.map(m => m.machineId).filter(Boolean);
+
+//             if (machineIds.length === 0) break;
+
+//             const schools = await School.findAll({
+//                 where: {
+//                     machineId: machineIds,
+//                     ...schoolWhere,
+//                 },
+//             });
+
+//             const schoolMap = {};
+//             schools.forEach(s => {
+//                 schoolMap[s.machineId] = s.dataValues;
+//             });
+
+//             const filteredBatch = batch.filter(machine => {
+//                 if (machine.machineId && schoolMap[machine.machineId]) {
+//                     machine.dataValues.school = schoolMap[machine.machineId];
+//                     return true;
+//                 }
+//                 return Object.keys(schoolWhere).length === 0; // no filter → keep all
+//             });
+
+//             // const filteredBatch = batch.filter(machine => {
+//             //     if (Object.keys(schoolWhere).length === 0) return true; // no filters → keep all
+
+//             //     if (machine.machineId && schoolMap[machine.machineId]) {
+//             //         machine.dataValues.school = schoolMap[machine.machineId];
+//             //         // match filters
+//             //         return Object.keys(schoolWhere).every(field => {
+//             //             const filterValue = schoolWhere[field][Op.like].replace(/%/g, '');
+//             //             return machine.dataValues.school[field].includes(filterValue);
+//             //         });
+//             //     }
+//             //     return false;
+//             // });
+
+
+//             allResults = allResults.concat(filteredBatch);
+//             offset += chunkSize;
+//         }
+
+//         if (allResults.length === 0) {
+//             return res.status(404).send({
+//                 success: false,
+//                 message: "No dispense history records found for the given filters.",
+//             });
+//         }
+
+//         return res.status(200).send({
+//             success: true,
+//             total: allResults.length,
+//             data: allResults,
+//         });
+
+//     } catch (error) {
+//         console.error(error);
+//         return res.status(500).send({
+//             success: false,
+//             message: "Error retrieving dispense history",
+//             error,
+//         });
+//     }
+// };
+
 
 exports.getDispenseHistoryExportData = async (req, res) => {
-    try {
-        const { startDate, endDate, filters } = req.query;
+  try {
+    const { startDate, endDate, filters } = req.query;
 
-        // ✅ where clause for dispense history
-        const whereClause = {
-            itemsDispensed: { [Op.not]: null },
-        };
+    const whereClause = {
+      itemsDispensed: { [Op.not]: null },
+    };
 
-        // ✅ date filters
-        if (startDate && endDate) {
-            const start = dayjs(startDate).startOf("day").toDate(); // local start
-            const end = dayjs(endDate).endOf("day").toDate();       // local end
-            whereClause.createdAt = { [Op.between]: [start, end] };
-        }
-        else if (startDate) {
-            whereClause.createdAt = { [Op.gte]: new Date(startDate) };
-        } else if (endDate) {
-            whereClause.createdAt = { [Op.lte]: new Date(endDate) };
-        }
+    const schoolWhere = {};
 
-        // ✅ parse DataGrid filters
-        let schoolWhere = {};
-        if (filters) {
-            const parsedFilters = JSON.parse(filters); // DataGrid sends array
-            parsedFilters.forEach(f => {
-                if (f.field === "schoolState" && f.value) {
-                    schoolWhere.state = { [Op.like]: `%${f.value}%` };
-                }
-                if (f.field === "schoolDistrict" && f.value) {
-                    schoolWhere.schoolDistrict = { [Op.like]: `%${f.value}%` };
-                }
-            });
-        }
-
-        const chunkSize = 500;
-        let offset = 0;
-        let allResults = [];
-
-        while (true) {
-            const batch = await DispenseHistory.findAll({
-                where: whereClause,
-                order: [["createdAt", "DESC"]],
-                limit: chunkSize,
-                offset,
-            });
-
-            if (batch.length === 0) break;
-
-            const machineIds = batch.map(m => m.machineId).filter(Boolean);
-
-            if (machineIds.length === 0) break;
-
-            const schools = await School.findAll({
-                where: {
-                    machineId: machineIds,
-                    ...schoolWhere,
-                },
-            });
-
-            const schoolMap = {};
-            schools.forEach(s => {
-                schoolMap[s.machineId] = s.dataValues;
-            });
-
-            const filteredBatch = batch.filter(machine => {
-                if (machine.machineId && schoolMap[machine.machineId]) {
-                    machine.dataValues.school = schoolMap[machine.machineId];
-                    return true;
-                }
-                return Object.keys(schoolWhere).length === 0; // no filter → keep all
-            });
-
-            // const filteredBatch = batch.filter(machine => {
-            //     if (Object.keys(schoolWhere).length === 0) return true; // no filters → keep all
-
-            //     if (machine.machineId && schoolMap[machine.machineId]) {
-            //         machine.dataValues.school = schoolMap[machine.machineId];
-            //         // match filters
-            //         return Object.keys(schoolWhere).every(field => {
-            //             const filterValue = schoolWhere[field][Op.like].replace(/%/g, '');
-            //             return machine.dataValues.school[field].includes(filterValue);
-            //         });
-            //     }
-            //     return false;
-            // });
-
-
-            allResults = allResults.concat(filteredBatch);
-            offset += chunkSize;
-        }
-
-        if (allResults.length === 0) {
-            return res.status(404).send({
-                success: false,
-                message: "No dispense history records found for the given filters.",
-            });
-        }
-
-        return res.status(200).send({
-            success: true,
-            total: allResults.length,
-            data: allResults,
-        });
-
-    } catch (error) {
-        console.error(error);
-        return res.status(500).send({
-            success: false,
-            message: "Error retrieving dispense history",
-            error,
-        });
+    if (startDate && endDate) {
+      whereClause.createdAt = {
+        [Op.between]: [
+          dayjs(startDate).startOf("day").toDate(),
+          dayjs(endDate).endOf("day").toDate(),
+        ],
+      };
+    } else if (startDate) {
+      whereClause.createdAt = {
+        [Op.gte]: dayjs(startDate).startOf("day").toDate(),
+      };
+    } else if (endDate) {
+      whereClause.createdAt = {
+        [Op.lte]: dayjs(endDate).endOf("day").toDate(),
+      };
     }
-};
 
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+
+      parsedFilters.forEach((f) => {
+        if (!f?.field || f?.value === undefined || f?.value === null || f?.value === "") return;
+
+        const value = String(f.value).trim();
+
+        switch (f.field) {
+          case "id":
+            whereClause.id = { [Op.like]: `%${value}%` };
+            break;
+          case "machineId":
+            whereClause.machineId = { [Op.like]: `%${value}%` };
+            break;
+          case "itemsDispensed":
+            whereClause.itemsDispensed = { [Op.like]: `%${value}%` };
+            break;
+          case "stock":
+            whereClause.stock = { [Op.like]: `%${value}%` };
+            break;
+          case "schoolName":
+            schoolWhere.schoolName = { [Op.like]: `%${value}%` };
+            break;
+          case "schoolState":
+            schoolWhere.state = { [Op.like]: `%${value}%` };
+            break;
+          case "schoolDistrict":
+            schoolWhere.schoolDistrict = { [Op.like]: `%${value}%` };
+            break;
+          case "schoolBlock":
+            schoolWhere.schoolBlock = { [Op.like]: `%${value}%` };
+            break;
+          case "schoolSpocName":
+            schoolWhere.schoolSpocName = { [Op.like]: `%${value}%` };
+            break;
+          case "ngoSpocName":
+            schoolWhere.ngoSpocName = { [Op.like]: `%${value}%` };
+            break;
+          default:
+            break;
+        }
+      });
+    }
+
+    const results = await DispenseHistory.findAll({
+      where: whereClause,
+      include: [
+        {
+          model: School,
+          as: "school",
+          required: Object.keys(schoolWhere).length > 0,
+          where: schoolWhere,
+        },
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    return res.status(200).send({
+      success: true,
+      total: results.length,
+      data: results,
+    });
+  } catch (error) {
+    console.error("Export error:", error);
+    return res.status(500).send({
+      success: false,
+      message: "Error retrieving dispense history",
+      error: error.message,
+    });
+  }
+};
 
 exports.getDateWiseDispenseHistory = async (req, res) => {
     try {
@@ -1745,7 +1976,6 @@ exports.deleteGeoLocation = async (req, res) => {
             });
         }
         const selectedBlock = geoLocation.dataValues.block;
-        console.log("thisis the selected block:", selectedBlock)
         // Check if there is a school at the same block
         const schoolAtBlock = await School.findOne({
             where: { schoolBlock: selectedBlock }
@@ -1764,7 +1994,6 @@ exports.deleteGeoLocation = async (req, res) => {
             message: `Geolocation with id ${id} deleted successfully.`
         });
     } catch (error) {
-        console.log(error);
         return res.status(500).send({
             success: false,
             message: 'Error deleting geolocation data',
@@ -1792,7 +2021,6 @@ exports.getAllSchool = async (req, res) => {
             data: schoolResult
         });
     } catch (error) {
-        console.log(error);
         return res.status(500).send({
             success: false,
             message: 'Error retrieving school data',
@@ -1827,7 +2055,6 @@ exports.getAllUsers = async (req, res) => {
             data: loginDetailsResult
         });
     } catch (error) {
-        console.log(error);
         return res.status(500).send({
             success: false,
             message: 'Error retrieving user data',
@@ -1868,7 +2095,6 @@ exports.deleteUser = async (req, res) => {
         });
 
     } catch (error) {
-        console.log(error);
         return res.status(500).send({
             success: false,
             message: 'Error deleting user data',
@@ -2468,7 +2694,6 @@ exports.getAllNgoSpocs = async (req, res) => {
             data: ngoSpocResult
         });
     } catch (error) {
-        console.log(error);
         return res.status(500).send({
             success: false,
             message: 'Error retrieving NGO SPOCs',
@@ -2543,7 +2768,6 @@ exports.deleteNgoSpoc = async (req, res) => {
             message: 'NGO SPOC deleted successfully'
         });
     } catch (error) {
-        console.log(error);
         return res.status(500).send({
             success: false,
             message: 'Error deleting NGO SPOC',
@@ -2680,6 +2904,89 @@ exports.getAllConsumptionPerGirl = async (req, res) => {
 
 
 // Manual Pad Distributr
+// exports.createManualPads = async (req, res) => {
+//     const {
+//         machineId,
+//         padCounts,
+//         remark,
+//         dateOfEntry,
+//         eventStartDate,
+//         eventEndDate
+//     } = req.body;
+
+//     if (!machineId || !padCounts || !dateOfEntry || !eventStartDate || !eventEndDate) {
+//         return res.status(400).send({
+//             success: false,
+//             message: 'All fields  are required'
+//         });
+//     }
+
+//     try {
+//         // 1️⃣ Check if this machineId already exists in ManualPads
+//         const existing = await ManualPads.findOne({ where: { machineId } });
+
+//         if (existing) {
+//             return res.status(400).send({
+//                 success: false,
+//                 message: 'Manual Pads for this machine already exist. Please update instead.'
+//             });
+//         }
+
+//         const manualPads = await ManualPads.create({
+//             machineId,
+//             padCounts,
+//             remark,
+//             dateOfEntry,
+//             eventStartDate,
+//             eventEndDate
+//         });
+
+//         // const stockRecord = await StockHistory.findOne({
+//         //     where: { machineId }
+//         // });
+
+//         // // 3️⃣ Create NEW DispenseHistory entry (instead of UPDATE)
+//         // const dispenseHistory = await DispenseHistory.create({
+//         //     event_type: "MANUAL",        // or whatever constant you use
+//         //     machineId: Number(machineId),
+//         //     stock: stockRecord ? stockRecord.stock : 0,                    // or calculate if needed
+//         //     itemsDispensed: padCounts,        // manual entry so null
+//         //     manualPads: padCounts        // 🔥 key part
+//         // });
+
+//         const updateQuery = `
+//         UPDATE DispenseHistories
+//         SET manualPads = ?
+//         WHERE machineId = ?
+//         `;
+
+
+//         // Remove destructuring
+//         const updateResult = await mySqlPool.query(updateQuery, [padCounts, Number(machineId)]);
+
+//         return res.status(201).send({
+//             success: true,
+//             message: 'Manual Pads created successfully',
+//             data: manualPads
+//         });
+//     } catch (error) {
+//         if (error.name === 'SequelizeUniqueConstraintError') {
+//             return res.status(400).send({
+//                 success: false,
+//                 message: 'Manual Pads must be unique',
+//                 error
+//             });
+//         }
+
+//         console.error(error);
+//         return res.status(500).send({
+//             success: false,
+//             message: 'Error creating NGO SPOC',
+//             error
+//         });
+//     }
+// };
+
 exports.createManualPads = async (req, res) => {
     const {
         machineId,
@@ -2693,71 +3000,85 @@ exports.createManualPads = async (req, res) => {
     if (!machineId || !padCounts || !dateOfEntry || !eventStartDate || !eventEndDate) {
         return res.status(400).send({
             success: false,
-            message: 'All fields  are required'
+            message: 'All fields are required'
         });
     }
 
     try {
-        // 1️⃣ Check if this machineId already exists in ManualPads
+
         const existing = await ManualPads.findOne({ where: { machineId } });
 
+        let manualPads;
+
         if (existing) {
-            return res.status(400).send({
-                success: false,
-                message: 'Manual Pads for this machine already exist. Please update instead.'
+
+            // 1️⃣ Update ManualPads (previous + current)
+            const updatedPadCount = existing.padCounts + Number(padCounts);
+
+            await existing.update({
+                padCounts: updatedPadCount,
+                remark,
+                dateOfEntry,
+                eventStartDate,
+                eventEndDate
+            });
+
+            manualPads = existing;
+
+            // 2️⃣ Update previous DispenseHistory rows
+            await mySqlPool.query(
+                `
+                UPDATE DispenseHistories
+                SET manualPads = COALESCE(manualPads,0) + ?
+                WHERE machineId = ?
+                `,
+                [padCounts, Number(machineId)]
+            );
+
+            // 3️⃣ 🔥 Create NEW DispenseHistory entry
+            await DispenseHistory.create({
+                event_type: 4,
+                machineId: Number(machineId),
+                stock: 0,
+                itemsDispensed: padCounts,
+                manualPads: updatedPadCount
+            });
+
+        } else {
+
+            // 4️⃣ Create ManualPads
+            manualPads = await ManualPads.create({
+                machineId,
+                padCounts,
+                remark,
+                dateOfEntry,
+                eventStartDate,
+                eventEndDate
+            });
+
+            // 5️⃣ Create DispenseHistory
+            await DispenseHistory.create({
+                event_type: 4,
+                machineId: Number(machineId),
+                stock: 0,
+                itemsDispensed: padCounts,
+                manualPads: padCounts
             });
         }
-
-        const manualPads = await ManualPads.create({
-            machineId,
-            padCounts,
-            remark,
-            dateOfEntry,
-            eventStartDate,
-            eventEndDate
-        });
-
-        // const stockRecord = await StockHistory.findOne({
-        //     where: { machineId }
-        // });
-
-        // // 3️⃣ Create NEW DispenseHistory entry (instead of UPDATE)
-        // const dispenseHistory = await DispenseHistory.create({
-        //     event_type: "MANUAL",        // or whatever constant you use
-        //     machineId: Number(machineId),
-        //     stock: stockRecord ? stockRecord.stock : 0,                    // or calculate if needed
-        //     itemsDispensed: padCounts,        // manual entry so null
-        //     manualPads: padCounts        // 🔥 key part
-        // });
-
-        const updateQuery = `
-        UPDATE DispenseHistories
-        SET manualPads = ?
-        WHERE machineId = ?
-        `;
-
-
-        // Remove destructuring
-        const updateResult = await mySqlPool.query(updateQuery, [padCounts, Number(machineId)]);
 
         return res.status(201).send({
             success: true,
-            message: 'Manual Pads created successfully',
+            message: 'Manual Pads processed successfully',
             data: manualPads
         });
+
     } catch (error) {
-        if (error.name === 'SequelizeUniqueConstraintError') {
-            return res.status(400).send({
-                success: false,
-                message: 'Manual Pads must be unique',
-                error
-            });
-        }
 
         console.error(error);
+
         return res.status(500).send({
             success: false,
-            message: 'Error creating NGO SPOC',
+            message: 'Error processing Manual Pads',
             error
         });
     }
@@ -2782,7 +3103,7 @@ exports.getAllManualPads = async (req, res) => {
             data: manualPadscResult
         });
     } catch (error) {
-        console.log(error);
+
         return res.status(500).send({
             success: false,
             message: 'Error retrieving ManualPads',
@@ -3455,63 +3776,150 @@ exports.machineWiseDispenseAndRefill = async (req, res) => {
     }
 };
 
+// exports.saveReport = async (req, res) => {
+//     try {
+//         const {
+//             reportType,      // machine_wise_dispense | avg_consumption | state_district
+//             reportName,
+//             description,
+//             filters,         // full filters object
+//             summary          // summary object from frontend / backend
+//         } = req.body;
+
+//         const ownerId = req.user?.username || 1; // JWT se lo
+//         const ownerName = req.user?.name || "System User";
+//         const role = req.user?.role || "admin";
+//         const roleId = req.user?.roleId || 1;
+
+//         if (!reportType || !reportName || !filters) {
+//             return res.status(400).json({
+//                 status: false,
+//                 message: "Missing required fields"
+//             });
+//         }
+
+//         // ✅ description max 200 chars safety
+//         const safeDescription = description
+//             ? description.toString().substring(0, 200)
+//             : null;
+
+//         const result = await Sequelize.query(
+//             `
+//       INSERT INTO saved_reports
+//       (
+//         report_type,
+//         report_name,
+//         description, 
+//         filters,
+//         summary,
+//         owner_id,
+//         owner_name,
+//         role,
+//         roleId
+//       )
+//       VALUES
+//       (
+//         :reportType,
+//         :reportName,
+//         :description, 
+//         :filters,
+//         :summary,
+//         :ownerId,
+//         :ownerName,
+//         :role,
+//         :roleId
+//       )
+//       `,
+//             {
+//                 replacements: {
+//                     reportType,
+//                     reportName,
+//                     description: safeDescription,
+//                     filters: JSON.stringify(filters),
+//                     summary: JSON.stringify(summary || {}),
+//                     ownerId,
+//                     ownerName,
+//                     role,
+//                     roleId
+//                 },
+//                 type: Sequelize.QueryTypes.INSERT
+//             }
+//         );
+
+//         res.status(201).json({
+//             status: true,
+//             message: "Report saved successfully",
+//         });
+
+//     } catch (error) {
+//         console.error("saveReport error:", error);
+//         res.status(500).json({
+//             status: false,
+//             message: "Server error while saving report"
+//         });
+//     }
+// };
+
 exports.saveReport = async (req, res) => {
     try {
         const {
-            reportType,      // machine_wise_dispense | avg_consumption | state_district
+            reportType,       // INT (id from report_types table)
+            reportSavedType,  // my_reports | standard_report
             reportName,
             description,
-            filters,         // full filters object
-            summary          // summary object from frontend / backend
+            filters,
+            summary
         } = req.body;
 
-        const ownerId = req.user?.username || 1; // JWT se lo
+        const ownerId = req.user?.username || 1;
         const ownerName = req.user?.name || "System User";
         const role = req.user?.role || "admin";
         const roleId = req.user?.roleId || 1;
 
-        if (!reportType || !reportName || !filters) {
+        if (!reportType || !reportName || !filters || !reportSavedType) {
             return res.status(400).json({
                 status: false,
                 message: "Missing required fields"
             });
         }
 
-        // ✅ description max 200 chars safety
         const safeDescription = description
             ? description.toString().substring(0, 200)
             : null;
 
-        const result = await Sequelize.query(
+        await Sequelize.query(
             `
-      INSERT INTO saved_reports
-      (
-        report_type,
-        report_name,
-        description, 
-        filters,
-        summary,
-        owner_id,
-        owner_name,
-        role,
-        roleId
-      )
-      VALUES
-      (
-        :reportType,
-        :reportName,
-        :description, 
-        :filters,
-        :summary,
-        :ownerId,
-        :ownerName,
-        :role,
-        :roleId
-      )
-      `,
+            INSERT INTO saved_reports
+            (
+                report_type,
+                report_saved_type,
+                report_name,
+                description,
+                filters,
+                summary,
+                owner_id,
+                owner_name,
+                role,
+                roleId
+            )
+            VALUES
+            (
+                :reportType,
+                :reportSavedType,
+                :reportName,
+                :description,
+                :filters,
+                :summary,
+                :ownerId,
+                :ownerName,
+                :role,
+                :roleId
+            )
+            `,
             {
                 replacements: {
-                    reportType,
+                    reportType,          // INT
+                    reportSavedType,     // my_reports | standard_report
                     reportName,
                     description: safeDescription,
                     filters: JSON.stringify(filters),
@@ -3527,7 +3935,7 @@ exports.saveReport = async (req, res) => {
 
         res.status(201).json({
             status: true,
-            message: "Report saved successfully",
+            message: "Report saved successfully"
         });
 
     } catch (error) {
@@ -3539,68 +3947,177 @@ exports.saveReport = async (req, res) => {
     }
 };
 
+// exports.getSavedReports = async (req, res) => {
+//     try {
+//         const type = req.query.type; // admin | user | superadmin
+//         const role = req.user?.role || "admin";
+//         const ownerId = req.user?.username;
+
+//         let roleCondition = "";
+//         let replacements = {};
+
+//         /* ================= SUPERADMIN ================= */
+//         if (role === "superadmin") {
+//             if (type === "admin") {
+//                 // sab admin reports
+//                 roleCondition = `WHERE role = 'admin'`;
+//             }
+//             else if (type === "user") {
+//                 // sab user reports
+//                 roleCondition = `WHERE role = 'user'`;
+//             }
+//             else {
+//                 // ✅ superadmin ke apne reports
+//                 roleCondition = `WHERE role = 'superadmin' AND owner_id = :ownerId`;
+//                 replacements.ownerId = ownerId;
+//             }
+//         }
+
+//         /* ================= ADMIN ================= */
+//         else if (role === "admin") {
+//             if (type === "admin") {
+//                 // admin ke apne reports
+//                 roleCondition = `WHERE role = 'admin' AND owner_id = :ownerId`;
+//                 replacements.ownerId = ownerId;
+//             }
+//             else if (type === "user") {
+//                 // sab user reports
+//                 roleCondition = `WHERE role = 'user'`;
+//             }
+//         }
+
+//         /* ================= USER ================= */
+//         else if (role === "user") {
+//             // sirf apne reports
+//             roleCondition = `WHERE role = 'user' AND owner_id = :ownerId`;
+//             replacements.ownerId = ownerId;
+//         }
+
+//         const reports = await Sequelize.query(
+//             `
+//       SELECT 
+//         id,
+//         report_type,
+//         report_name,
+//         description,
+//         role,
+//         owner_id,
+//         owner_name,
+//         created_at,
+//         updated_at
+//       FROM saved_reports
+//       ${roleCondition}
+//       ORDER BY created_at DESC
+//       `,
+//             {
+//                 replacements,
+//                 type: Sequelize.QueryTypes.SELECT,
+//             }
+//         );
+
+//         res.status(200).json({
+//             status: true,
+//             data: reports,
+//         });
+
+//     } catch (error) {
+//         console.error("getSavedReports", error);
+//         res.status(500).json({
+//             status: false,
+//             message: "Failed to fetch saved reports",
+//         });
+//     }
+// };
+
+// exports.getSavedReports = async (req, res) => {
+//     try {
+
+//         const role = req.user?.role;
+//         const ownerId = req.user?.username;
+
+//         const reports = await Sequelize.query(
+//             `
+//             SELECT 
+//                 id,
+//                 report_type,
+//                 report_saved_type,
+//                 report_name,
+//                 description,
+//                 role,
+//                 owner_id,
+//                 owner_name,
+//                 created_at,
+//                 updated_at
+//             FROM saved_reports
+//             WHERE report_saved_type = 'my_reports'
+//             AND owner_id = :ownerId
+//             ORDER BY created_at DESC
+//             `,
+//             {
+//                 replacements: { ownerId },
+//                 type: Sequelize.QueryTypes.SELECT,
+//             }
+//         );
+
+//         res.status(200).json({
+//             status: true,
+//             data: reports,
+//         });
+
+//     } catch (error) {
+
+//         console.error("getSavedReports", error);
+
+//         res.status(500).json({
+//             status: false,
+//             message: "Failed to fetch saved reports",
+//         });
+//     }
+// };
+
 exports.getSavedReports = async (req, res) => {
     try {
-        const type = req.query.type; // admin | user | superadmin
-        const role = req.user?.role || "admin";
+        const queryRole = req.query.role;
         const ownerId = req.user?.username;
 
-        let roleCondition = "";
+        let whereCondition = "";
         let replacements = {};
 
-        /* ================= SUPERADMIN ================= */
-        if (role === "superadmin") {
-            if (type === "admin") {
-                // sab admin reports
-                roleCondition = `WHERE role = 'admin'`;
-            }
-            else if (type === "user") {
-                // sab user reports
-                roleCondition = `WHERE role = 'user'`;
-            }
-            else {
-                // ✅ superadmin ke apne reports
-                roleCondition = `WHERE role = 'superadmin' AND owner_id = :ownerId`;
-                replacements.ownerId = ownerId;
-            }
-        }
+        const hasRoleFilter =
+            queryRole !== undefined &&
+            queryRole !== null &&
+            queryRole !== "" &&
+            queryRole !== "null" &&
+            queryRole !== "undefined";
 
-        /* ================= ADMIN ================= */
-        else if (role === "admin") {
-            if (type === "admin") {
-                // admin ke apne reports
-                roleCondition = `WHERE role = 'admin' AND owner_id = :ownerId`;
-                replacements.ownerId = ownerId;
-            }
-            else if (type === "user") {
-                // sab user reports
-                roleCondition = `WHERE role = 'user'`;
-            }
-        }
-
-        /* ================= USER ================= */
-        else if (role === "user") {
-            // sirf apne reports
-            roleCondition = `WHERE role = 'user' AND owner_id = :ownerId`;
+        if (hasRoleFilter) {
+            whereCondition = `WHERE role = :role`;
+            replacements.role = queryRole;
+        } else {
+            whereCondition = `
+                WHERE report_saved_type = 'my_reports'
+                AND owner_id = :ownerId
+            `;
             replacements.ownerId = ownerId;
         }
 
         const reports = await Sequelize.query(
             `
-      SELECT 
-        id,
-        report_type,
-        report_name,
-        description,
-        role,
-        owner_id,
-        owner_name,
-        created_at,
-        updated_at
-      FROM saved_reports
-      ${roleCondition}
-      ORDER BY created_at DESC
-      `,
+            SELECT 
+                id,
+                report_type,
+                report_saved_type,
+                report_name,
+                description,
+                role,
+                owner_id,
+                owner_name,
+                created_at,
+                updated_at
+            FROM saved_reports
+            ${whereCondition}
+            ORDER BY created_at DESC
+            `,
             {
                 replacements,
                 type: Sequelize.QueryTypes.SELECT,
@@ -3611,15 +4128,64 @@ exports.getSavedReports = async (req, res) => {
             status: true,
             data: reports,
         });
-
     } catch (error) {
         console.error("getSavedReports", error);
+
         res.status(500).json({
             status: false,
             message: "Failed to fetch saved reports",
         });
     }
 };
+
+exports.getStandardReports = async (req, res) => {
+    try {
+
+        const { role, reportSavedType } = req.body;
+
+        const reports = await Sequelize.query(
+            `
+            SELECT
+                id,
+                report_type,
+                report_saved_type,
+                report_name,
+                description,
+                role,
+                roleId,
+                owner_id,
+                owner_name,
+                created_at,
+                updated_at
+            FROM saved_reports
+            WHERE role = role
+            AND report_saved_type = :reportSavedType
+            ORDER BY created_at DESC
+            `,
+            {
+                replacements: {
+                    role,
+                    reportSavedType
+                },
+                type: Sequelize.QueryTypes.SELECT,
+            }
+        );
+
+        res.status(200).json({
+            status: true,
+            data: reports,
+        });
+
+    } catch (error) {
+        console.error("getStandardReports error:", error);
+
+        res.status(500).json({
+            status: false,
+            message: "Failed to fetch standard reports",
+        });
+    }
+};
+
 exports.deleteSavedReport = async (req, res) => {
     try {
         const { id } = req.params;
@@ -3648,6 +4214,64 @@ exports.deleteSavedReport = async (req, res) => {
         });
     }
 };
+
+// exports.viewSavedReport = async (req, res) => {
+//     try {
+//         const { id } = req.params;
+
+//         const report = await Sequelize.query(
+//             `
+//             SELECT 
+//                 id,
+//                 report_type,
+//                 report_name,
+//                 description,
+//                 filters,
+//                 owner_id,
+//                 owner_name,
+//                 created_at
+//             FROM saved_reports
+//             WHERE id = :id
+//             `,
+//             {
+//                 replacements: { id },
+//                 type: Sequelize.QueryTypes.SELECT,
+//             }
+//         );
+
+//         if (!report.length) {
+//             return res.status(404).json({
+//                 status: false,
+//                 message: "Saved report not found",
+//             });
+//         }
+
+//         const row = report[0];
+
+//         res.status(200).json({
+//             status: true,
+//             data: {
+//                 id: row.id,
+//                 reportType: row.report_type,
+//                 reportName: row.report_name,
+//                 description: row.description,
+
+//                 // ✅ FIX HERE
+//                 filters: row.filters ? JSON.parse(row.filters) : {},
+
+//                 ownerName: row.owner_name,
+//                 createdAt: row.created_at,
+//             },
+//         });
+//     } catch (error) {
+//         console.error("viewSavedReport error:", error);
+//         res.status(500).json({
+//             status: false,
+//             message: "Server error",
+//         });
+//     }
+// };
+
 
 exports.viewSavedReport = async (req, res) => {
     try {
@@ -3682,30 +4306,43 @@ exports.viewSavedReport = async (req, res) => {
 
         const row = report[0];
 
-        res.status(200).json({
+        let parsedFilters = {};
+
+        try {
+            if (!row.filters) {
+                parsedFilters = {};
+            } else if (typeof row.filters === "string") {
+                parsedFilters = JSON.parse(row.filters);
+            } else if (typeof row.filters === "object") {
+                parsedFilters = row.filters;
+            } else {
+                parsedFilters = {};
+            }
+        } catch (parseError) {
+            console.error("filters parse error:", parseError);
+            parsedFilters = {};
+        }
+
+        return res.status(200).json({
             status: true,
             data: {
                 id: row.id,
                 reportType: row.report_type,
                 reportName: row.report_name,
                 description: row.description,
-
-                // ✅ FIX HERE
-                filters: row.filters ? JSON.parse(row.filters) : {},
-
+                filters: parsedFilters,
                 ownerName: row.owner_name,
                 createdAt: row.created_at,
             },
         });
     } catch (error) {
         console.error("viewSavedReport error:", error);
-        res.status(500).json({
+        return res.status(500).json({
             status: false,
-            message: "Server error",
+            message: error.message || "Server error",
         });
     }
 };
-
 
 exports.updateSavedReport = async (req, res) => {
     try {
@@ -3786,6 +4423,166 @@ exports.updateSavedReport = async (req, res) => {
 
 
 // Dispense Report
+// exports.dispenseReport = async (req, res) => {
+//     try {
+//         const {
+//             level = "national", // national | state | district | block | school
+//             startDate,
+//             endDate,
+//         } = req.body;
+
+//         if (!startDate || !endDate) {
+//             return res.status(400).json({
+//                 status: false,
+//                 message: "startDate and endDate are required",
+//             });
+//         }
+
+//         const start = `${startDate} 00:00:00`;
+//         const end = `${endDate} 23:59:59`;
+
+//         const numberOfDays =
+//             Math.ceil(
+//                 (new Date(endDate) - new Date(startDate)) /
+//                 (1000 * 60 * 60 * 24)
+//             ) + 1;
+
+//         /* =============================
+//            WHERE CONDITION (DATE ONLY)
+//         ============================== */
+//         const whereConditions = `
+//       dh.createdAt BETWEEN :start AND :end
+//     `;
+
+//         /* =============================
+//            LEVEL CONFIGURATION
+//         ============================== */
+//         let levelSelect = `'National' AS level`;
+//         let groupBy = ``;
+
+//         if (level === "state") {
+//             levelSelect = `TRIM(s.state) AS level`;
+//             groupBy = `GROUP BY TRIM(s.state)`;
+//         }
+
+//         if (level === "district") {
+//             levelSelect = `TRIM(s.schoolDistrict) AS level`;
+//             groupBy = `GROUP BY TRIM(s.schoolDistrict)`;
+//         }
+
+//         if (level === "block") {
+//             levelSelect = `
+//         CONCAT(TRIM(s.schoolBlock), '_', TRIM(s.schoolDistrict)) AS level
+//       `;
+//             groupBy = `GROUP BY TRIM(s.schoolBlock), TRIM(s.schoolDistrict)`;
+//         }
+
+//         if (level === "school") {
+//             levelSelect = `
+//         CONCAT(TRIM(s.machineId), '_', TRIM(s.schoolName)) AS level
+//       `;
+//             groupBy = `GROUP BY TRIM(s.machineId), TRIM(s.schoolName)`;
+//         }
+
+//         /* =============================
+//            MAIN QUERY
+//         ============================== */
+//         const data = await Sequelize.query(
+//             `
+//       SELECT
+//         ${levelSelect},
+
+//         :numberOfDays AS days,
+
+//         /* SCHOOLGIRLS */
+//         SUM(DISTINCT s.numberOfGirls) AS schoolgirls,
+
+//         /* MACHINES INSTALLED */
+//         COUNT(DISTINCT s.machineId) AS machinesInstalled,
+
+//         /* SCHOOLS */
+//         COUNT(DISTINCT s.schoolName) AS schools,
+
+//         /* PADS DISPENSED */
+//         SUM(dh.itemsDispensed) AS padsDispensed,
+
+//         /* CONSUMPTION RATE */
+//         ROUND(
+//           SUM(dh.itemsDispensed) /
+//           NULLIF(SUM(DISTINCT s.numberOfGirls), 0),
+//           2
+//         ) AS consumptionRate
+
+//       FROM DispenseHistories dh
+//       JOIN Schools s
+//         ON s.machineId = dh.machineId
+
+//       WHERE ${whereConditions}
+
+//       ${groupBy}
+
+//       ORDER BY level ASC
+//       `,
+//             {
+//                 type: Sequelize.QueryTypes.SELECT,
+//                 replacements: {
+//                     start,
+//                     end,
+//                     numberOfDays,
+//                 },
+//             }
+//         );
+
+//         /* =============================
+//            SUMMARY
+//         ============================== */
+//         const summary = {
+//             period: `${startDate} to ${endDate}`,
+//             numberOfDays,
+//             totalSchoolgirls: data.reduce(
+//                 (sum, d) => sum + Number(d.schoolgirls || 0),
+//                 0
+//             ),
+//             totalMachinesInstalled: data.reduce(
+//                 (sum, d) => sum + Number(d.machinesInstalled || 0),
+//                 0
+//             ),
+//             totalSchools: data.reduce(
+//                 (sum, d) => sum + Number(d.schools || 0),
+//                 0
+//             ),
+//             totalPadsDispensed: data.reduce(
+//                 (sum, d) => sum + Number(d.padsDispensed || 0),
+//                 0
+//             ),
+//             averageConsumptionRate: (() => {
+//                 const girls = data.reduce(
+//                     (sum, d) => sum + Number(d.schoolgirls || 0),
+//                     0
+//                 );
+//                 const pads = data.reduce(
+//                     (sum, d) => sum + Number(d.padsDispensed || 0),
+//                     0
+//                 );
+//                 return girls ? +(pads / girls).toFixed(2) : 0;
+//             })(),
+//         };
+
+//         res.status(200).json({
+//             status: true,
+//             level,
+//             data,
+//             summary,
+//         });
+//     } catch (error) {
+//         console.error("dispenseReport", error);
+//         res.status(500).json({
+//             status: false,
+//             message: "Server error",
+//         });
+//     }
+// };
+
 exports.dispenseReport = async (req, res) => {
     try {
         const {
@@ -3810,82 +4607,81 @@ exports.dispenseReport = async (req, res) => {
                 (1000 * 60 * 60 * 24)
             ) + 1;
 
-        /* =============================
-           WHERE CONDITION (DATE ONLY)
-        ============================== */
-        const whereConditions = `
-      dh.createdAt BETWEEN :start AND :end
-    `;
+        let schoolLevelSelect = `'National' AS level`;
+        let schoolGroupBy = ``;
 
-        /* =============================
-           LEVEL CONFIGURATION
-        ============================== */
-        let levelSelect = `'National' AS level`;
-        let groupBy = ``;
+        let historyLevelSelect = `'National' AS level`;
+        let historyGroupBy = ``;
 
         if (level === "state") {
-            levelSelect = `TRIM(s.state) AS level`;
-            groupBy = `GROUP BY TRIM(s.state)`;
+            schoolLevelSelect = `TRIM(s.state) AS level`;
+            schoolGroupBy = `GROUP BY TRIM(s.state)`;
+
+            historyLevelSelect = `TRIM(s.state) AS level`;
+            historyGroupBy = `GROUP BY TRIM(s.state)`;
         }
 
         if (level === "district") {
-            levelSelect = `TRIM(s.schoolDistrict) AS level`;
-            groupBy = `GROUP BY TRIM(s.schoolDistrict)`;
+            schoolLevelSelect = `TRIM(s.schoolDistrict) AS level`;
+            schoolGroupBy = `GROUP BY TRIM(s.schoolDistrict)`;
+
+            historyLevelSelect = `TRIM(s.schoolDistrict) AS level`;
+            historyGroupBy = `GROUP BY TRIM(s.schoolDistrict)`;
         }
 
         if (level === "block") {
-            levelSelect = `
-        CONCAT(TRIM(s.schoolBlock), '_', TRIM(s.schoolDistrict)) AS level
-      `;
-            groupBy = `GROUP BY TRIM(s.schoolBlock), TRIM(s.schoolDistrict)`;
+            schoolLevelSelect = `CONCAT(TRIM(s.schoolBlock), '_', TRIM(s.schoolDistrict)) AS level`;
+            schoolGroupBy = `GROUP BY TRIM(s.schoolBlock), TRIM(s.schoolDistrict)`;
+
+            historyLevelSelect = `CONCAT(TRIM(s.schoolBlock), '_', TRIM(s.schoolDistrict)) AS level`;
+            historyGroupBy = `GROUP BY TRIM(s.schoolBlock), TRIM(s.schoolDistrict)`;
         }
 
         if (level === "school") {
-            levelSelect = `
-        CONCAT(TRIM(s.machineId), '_', TRIM(s.schoolName)) AS level
-      `;
-            groupBy = `GROUP BY TRIM(s.machineId), TRIM(s.schoolName)`;
+            schoolLevelSelect = `CONCAT(TRIM(s.machineId), '_', TRIM(s.schoolName)) AS level`;
+            schoolGroupBy = `GROUP BY TRIM(s.machineId), TRIM(s.schoolName)`;
+
+            historyLevelSelect = `CONCAT(TRIM(s.machineId), '_', TRIM(s.schoolName)) AS level`;
+            historyGroupBy = `GROUP BY TRIM(s.machineId), TRIM(s.schoolName)`;
         }
 
-        /* =============================
-           MAIN QUERY
-        ============================== */
         const data = await Sequelize.query(
             `
-      SELECT
-        ${levelSelect},
-
-        :numberOfDays AS days,
-
-        /* SCHOOLGIRLS */
-        SUM(DISTINCT s.numberOfGirls) AS schoolgirls,
-
-        /* MACHINES INSTALLED */
-        COUNT(DISTINCT s.machineId) AS machinesInstalled,
-
-        /* SCHOOLS */
-        COUNT(DISTINCT s.schoolName) AS schools,
-
-        /* PADS DISPENSED */
-        SUM(dh.itemsDispensed) AS padsDispensed,
-
-        /* CONSUMPTION RATE */
-        ROUND(
-          SUM(dh.itemsDispensed) /
-          NULLIF(SUM(DISTINCT s.numberOfGirls), 0),
-          2
-        ) AS consumptionRate
-
-      FROM DispenseHistories dh
-      JOIN Schools s
-        ON s.machineId = dh.machineId
-
-      WHERE ${whereConditions}
-
-      ${groupBy}
-
-      ORDER BY level ASC
-      `,
+            SELECT
+                sc.level,
+                :numberOfDays AS days,
+                sc.schoolgirls,
+                sc.machinesInstalled,
+                sc.schools,
+                COALESCE(hd.padsDispensed, 0) AS padsDispensed,
+                ROUND(
+                    COALESCE(hd.padsDispensed, 0) / NULLIF(sc.schoolgirls, 0),
+                    2
+                ) AS consumptionRate
+            FROM
+            (
+                SELECT
+                    ${schoolLevelSelect},
+                    SUM(COALESCE(s.numberOfGirls, 0)) AS schoolgirls,
+                    COUNT(DISTINCT s.machineId) AS machinesInstalled,
+                    COUNT(DISTINCT s.schoolName) AS schools
+                FROM Schools s
+                ${schoolGroupBy}
+            ) sc
+            LEFT JOIN
+            (
+                SELECT
+                    ${historyLevelSelect},
+                    SUM(COALESCE(dh.itemsDispensed, 0)) AS padsDispensed
+                FROM DispenseHistories dh
+                JOIN Schools s
+                    ON s.machineId = dh.machineId
+                WHERE dh.createdAt BETWEEN :start AND :end
+                ${historyGroupBy}
+            ) hd
+                ON sc.level = hd.level
+            ORDER BY sc.level ASC
+            `,
             {
                 type: Sequelize.QueryTypes.SELECT,
                 replacements: {
@@ -3896,9 +4692,6 @@ exports.dispenseReport = async (req, res) => {
             }
         );
 
-        /* =============================
-           SUMMARY
-        ============================== */
         const summary = {
             period: `${startDate} to ${endDate}`,
             numberOfDays,
@@ -3931,7 +4724,7 @@ exports.dispenseReport = async (req, res) => {
             })(),
         };
 
-        res.status(200).json({
+        return res.status(200).json({
             status: true,
             level,
             data,
@@ -3939,7 +4732,7 @@ exports.dispenseReport = async (req, res) => {
         });
     } catch (error) {
         console.error("dispenseReport", error);
-        res.status(500).json({
+        return res.status(500).json({
             status: false,
             message: "Server error",
         });
@@ -3952,38 +4745,38 @@ exports.lastActivityReport = async (req, res) => {
     try {
         const data = await Sequelize.query(
             `
-      SELECT
-        dh.machineId,
-        s.schoolName,
+            SELECT
+                dh.machineId,
+                s.schoolName,
+                s.schoolDistrict,
 
-        /* ✅ LAST DISPENSE DATE */
-        MAX(
-          CASE
-            WHEN dh.event_type = '1'
-            THEN dh.createdAt
-            ELSE NULL
-          END
-        ) AS lastDispenseDate,
+                /* LAST DISPENSE DATE */
+                MAX(
+                    CASE
+                        WHEN dh.event_type = '1' THEN dh.createdAt
+                        ELSE NULL
+                    END
+                ) AS lastDispenseDate,
 
-        /* ✅ LAST REFILL DATE */
-        MAX(
-          CASE
-            WHEN dh.event_type = '2'
-            THEN dh.createdAt
-            ELSE NULL
-          END
-        ) AS lastRefillDate
+                /* LAST REFILL DATE */
+                MAX(
+                    CASE
+                        WHEN dh.event_type = '2' THEN dh.createdAt
+                        ELSE NULL
+                    END
+                ) AS lastRefillDate
 
-      FROM DispenseHistories dh
-      JOIN Schools s
-        ON s.machineId = dh.machineId
+            FROM DispenseHistories dh
+            JOIN Schools s
+                ON s.machineId = dh.machineId
 
-      GROUP BY
-        dh.machineId,
-        s.schoolName
+            GROUP BY
+                dh.machineId,
+                s.schoolName,
+                s.schoolDistrict
 
-      ORDER BY dh.machineId ASC
-      `,
+            ORDER BY dh.machineId ASC
+            `,
             { type: Sequelize.QueryTypes.SELECT }
         );
 
@@ -3991,7 +4784,6 @@ exports.lastActivityReport = async (req, res) => {
             status: true,
             data
         });
-
     } catch (error) {
         console.error("lastActivityReport error:", error);
         res.status(500).json({
