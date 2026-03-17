@@ -1610,193 +1610,457 @@ exports.getDistrictWiseSchoolCount = async (req, res) => {
 // };
 
 
+// exports.getRefillingHistory = async (req, res) => {
+//     try {
+//         // Read pagination query params, with defaults
+//         const page = parseInt(req.query.page) || 1; // 1-based index
+//         const pageSize = parseInt(req.query.pageSize) || 10;
+//         const offset = (page - 1) * pageSize;
+//         const limit = pageSize;
+
+//         const { startDate, endDate } = req.query; // Get dates from query
+
+//         // Build where clause
+//         const whereClause = { event_type: '2' };
+
+//         // if (startDate && endDate) {
+//         //     whereClause.createdAt = {
+//         //         [Op.between]: [new Date(startDate), new Date(endDate)]
+//         //     };
+//         // }
+
+//         if (startDate && endDate) {
+//             const start = new Date(`${startDate}T00:00:00Z`);
+//             const end = new Date(`${endDate}T23:59:59Z`);
+//             whereClause.createdAt = { [Op.between]: [start, end] };
+//         }
+
+//         // Fetch total count
+//         const totalCount = await DispenseHistory.count({ where: whereClause });
+
+//         // Fetch paginated data
+//         const refillingHistory = await DispenseHistory.findAll({
+//             where: whereClause,
+//             order: [['createdAt', 'DESC']],
+//             offset,
+//             limit
+//         });
+
+//         // Attach school data
+//         for (let entry of refillingHistory) {
+//             if (entry.machineId) {
+//                 const schoolData = await School.findOne({
+//                     where: { machineId: entry.machineId }
+//                 });
+//                 if (schoolData) {
+//                     entry.dataValues.school = schoolData.dataValues;
+//                 }
+//             }
+//         }
+
+//         if (refillingHistory.length === 0) {
+//             return res.status(404).send({
+//                 success: false,
+//                 message: "No refilling history records found."
+//             });
+//         }
+
+//         return res.status(200).send({
+//             success: true,
+//             data: refillingHistory,
+//             total: totalCount
+//         });
+
+//     } catch (error) {
+//         console.error('Error retrieving refilling history:', error);
+//         return res.status(500).send({
+//             success: false,
+//             message: 'Error retrieving refilling history',
+//             error
+//         });
+//     }
+// };
+
 exports.getRefillingHistory = async (req, res) => {
-    try {
-        // Read pagination query params, with defaults
-        const page = parseInt(req.query.page) || 1; // 1-based index
-        const pageSize = parseInt(req.query.pageSize) || 10;
-        const offset = (page - 1) * pageSize;
-        const limit = pageSize;
+  try {
+    const page = parseInt(req.query.page, 10) || 1;
+    const pageSize = parseInt(req.query.pageSize, 10) || 100;
+    const offset = (page - 1) * pageSize;
 
-        const { startDate, endDate } = req.query; // Get dates from query
+    const { startDate, endDate, filters } = req.query;
 
-        // Build where clause
-        const whereClause = { event_type: '2' };
+    const whereClause = {
+      event_type: "2",
+    };
 
-        // if (startDate && endDate) {
-        //     whereClause.createdAt = {
-        //         [Op.between]: [new Date(startDate), new Date(endDate)]
-        //     };
-        // }
-
-        if (startDate && endDate) {
-            const start = new Date(`${startDate}T00:00:00Z`);
-            const end = new Date(`${endDate}T23:59:59Z`);
-            whereClause.createdAt = { [Op.between]: [start, end] };
-        }
-
-        // Fetch total count
-        const totalCount = await DispenseHistory.count({ where: whereClause });
-
-        // Fetch paginated data
-        const refillingHistory = await DispenseHistory.findAll({
-            where: whereClause,
-            order: [['createdAt', 'DESC']],
-            offset,
-            limit
-        });
-
-        // Attach school data
-        for (let entry of refillingHistory) {
-            if (entry.machineId) {
-                const schoolData = await School.findOne({
-                    where: { machineId: entry.machineId }
-                });
-                if (schoolData) {
-                    entry.dataValues.school = schoolData.dataValues;
-                }
-            }
-        }
-
-        if (refillingHistory.length === 0) {
-            return res.status(404).send({
-                success: false,
-                message: "No refilling history records found."
-            });
-        }
-
-        return res.status(200).send({
-            success: true,
-            data: refillingHistory,
-            total: totalCount
-        });
-
-    } catch (error) {
-        console.error('Error retrieving refilling history:', error);
-        return res.status(500).send({
-            success: false,
-            message: 'Error retrieving refilling history',
-            error
-        });
+    // Date filters
+    if (startDate && endDate) {
+      whereClause.createdAt = {
+        [Op.between]: [
+          new Date(`${startDate}T00:00:00.000Z`),
+          new Date(`${endDate}T23:59:59.999Z`),
+        ],
+      };
+    } else if (startDate) {
+      whereClause.createdAt = {
+        [Op.gte]: new Date(`${startDate}T00:00:00.000Z`),
+      };
+    } else if (endDate) {
+      whereClause.createdAt = {
+        [Op.lte]: new Date(`${endDate}T23:59:59.999Z`),
+      };
     }
+
+    const schoolFieldMap = {
+      schoolName: "schoolName",
+      schoolState: "state",
+      schoolDistrict: "schoolDistrict",
+      schoolBlock: "schoolBlock",
+      schoolSpocName: "schoolSpocName",
+      ngoSpocName: "ngoSpocName",
+    };
+
+    const refillFieldMap = {
+      id: "id",
+      machineId: "machineId",
+      stock: "stock",
+      createdAt: "createdAt",
+      event_type: "event_type",
+    };
+
+    const schoolWhere = {};
+
+    const buildCondition = (value, operatorType) => {
+      switch (operatorType) {
+        case "equals":
+        case "is":
+          return { [Op.eq]: value };
+
+        case "startsWith":
+          return { [Op.like]: `${value}%` };
+
+        case "endsWith":
+          return { [Op.like]: `%${value}` };
+
+        case "not":
+          return { [Op.ne]: value };
+
+        case "contains":
+        default:
+          return { [Op.like]: `%${value}%` };
+      }
+    };
+
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+
+      parsedFilters.forEach((f) => {
+        if (
+          !f?.field ||
+          f?.value === undefined ||
+          f?.value === null ||
+          f?.value === ""
+        ) {
+          return;
+        }
+
+        const rawValue = String(f.value).trim();
+        const operator = f.operator || "contains";
+
+        if (refillFieldMap[f.field]) {
+          whereClause[refillFieldMap[f.field]] = buildCondition(
+            rawValue,
+            operator
+          );
+        }
+
+        if (schoolFieldMap[f.field]) {
+          schoolWhere[schoolFieldMap[f.field]] = buildCondition(
+            rawValue,
+            operator
+          );
+        }
+      });
+    }
+
+    const include = [
+      {
+        model: School,
+        as: "school",
+        required: Object.keys(schoolWhere).length > 0,
+        where: Object.keys(schoolWhere).length > 0 ? schoolWhere : undefined,
+      },
+    ];
+
+    const { rows, count } = await DispenseHistory.findAndCountAll({
+      where: whereClause,
+      include,
+      order: [["createdAt", "DESC"]],
+      limit: pageSize,
+      offset,
+      distinct: true,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: rows,
+      total: count,
+      page,
+      pageSize,
+    });
+  } catch (error) {
+    console.error("getRefillingHistory error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error retrieving refilling history",
+      error: error.message,
+    });
+  }
 };
+
+
+// exports.getRefillingHistoryExportData = async (req, res) => {
+//     try {
+//         const { startDate, endDate, filters } = req.query;
+
+//         // ✅ Build where clause
+//         const whereClause = { event_type: "2" };
+
+//         if (startDate && endDate) {
+//             const start = new Date(`${startDate}T00:00:00Z`);
+//             const end = new Date(`${endDate}T23:59:59Z`);
+//             whereClause.createdAt = { [Op.between]: [start, end] };
+//         } else if (startDate) {
+//             whereClause.createdAt = { [Op.gte]: new Date(startDate) };
+//         } else if (endDate) {
+//             whereClause.createdAt = { [Op.lte]: new Date(endDate) };
+//         }
+
+//         // ✅ parse DataGrid filters
+//         let schoolWhere = {};
+//         if (filters) {
+//             const parsedFilters = JSON.parse(filters); // DataGrid sends array
+//             parsedFilters.forEach(f => {
+//                 if (f.field === "schoolState" && f.value) {
+//                     schoolWhere.state = { [Op.like]: `%${f.value}%` };
+//                 }
+//                 if (f.field === "schoolDistrict" && f.value) {
+//                     schoolWhere.schoolDistrict = { [Op.like]: `%${f.value}%` };
+//                 }
+//             });
+//         }
+
+//         const chunkSize = 500;
+//         let offset = 0;
+//         let allResults = [];
+
+//         while (true) {
+//             // ✅ fetch batch
+//             // const batch = await DispenseHistory.findAll({
+//             //     where: whereClause,
+//             //     order: [["createdAt", "DESC"]],
+//             //     limit: chunkSize,
+//             //     offset,
+//             // });
+
+//             const batch = await DispenseHistory.findAll({
+//                 where: whereClause,
+//                 order: [["createdAt", "DESC"]],
+//                 limit: chunkSize,
+//                 offset,
+//             });
+
+//             if (batch.length === 0) break;
+
+//             // ✅ collect machineIds
+//             const machineIds = batch.map((m) => m.machineId).filter(Boolean);
+
+//             if (machineIds.length === 0) break;
+
+//             // ✅ fetch schools in bulk
+//             // const schools = await School.findAll({
+//             //     where: { machineId: machineIds },
+//             // });
+
+//             const schools = await School.findAll({
+//                 where: {
+//                     machineId: machineIds,
+//                     ...schoolWhere,
+//                 },
+//             });
+
+//             const schoolMap = {};
+//             schools.forEach((s) => {
+//                 schoolMap[s.machineId] = s.dataValues;
+//             });
+
+//             // ✅ attach school data
+//             // batch.forEach((entry) => {
+//             //     if (entry.machineId && schoolMap[entry.machineId]) {
+//             //         entry.dataValues.school = schoolMap[entry.machineId];
+//             //     }
+//             // });
+
+
+//             const filteredBatch = batch.filter(machine => {
+//                 if (machine.machineId && schoolMap[machine.machineId]) {
+//                     machine.dataValues.school = schoolMap[machine.machineId];
+//                     return true;
+//                 }
+//                 return Object.keys(schoolWhere).length === 0; // no filter → keep all
+//             });
+
+//             allResults = allResults.concat(filteredBatch);
+//             offset += chunkSize;
+//         }
+
+//         if (allResults.length === 0) {
+//             return res.status(404).send({
+//                 success: false,
+//                 message: "No refilling history records found for the given date range.",
+//             });
+//         }
+
+//         return res.status(200).send({
+//             success: true,
+//             data: allResults,
+//             total: allResults.length,
+//         });
+//     } catch (error) {
+//         console.error("Error retrieving refilling history:", error);
+//         return res.status(500).send({
+//             success: false,
+//             message: "Error retrieving refilling history",
+//             error,
+//         });
+//     }
+// };
 
 exports.getRefillingHistoryExportData = async (req, res) => {
-    try {
-        const { startDate, endDate, filters } = req.query;
+  try {
+    const { startDate, endDate, filters } = req.query;
 
-        // ✅ Build where clause
-        const whereClause = { event_type: "2" };
+    const whereClause = {
+      event_type: "2",
+    };
 
-        if (startDate && endDate) {
-            const start = new Date(`${startDate}T00:00:00Z`);
-            const end = new Date(`${endDate}T23:59:59Z`);
-            whereClause.createdAt = { [Op.between]: [start, end] };
-        } else if (startDate) {
-            whereClause.createdAt = { [Op.gte]: new Date(startDate) };
-        } else if (endDate) {
-            whereClause.createdAt = { [Op.lte]: new Date(endDate) };
-        }
+    const schoolWhere = {};
 
-        // ✅ parse DataGrid filters
-        let schoolWhere = {};
-        if (filters) {
-            const parsedFilters = JSON.parse(filters); // DataGrid sends array
-            parsedFilters.forEach(f => {
-                if (f.field === "schoolState" && f.value) {
-                    schoolWhere.state = { [Op.like]: `%${f.value}%` };
-                }
-                if (f.field === "schoolDistrict" && f.value) {
-                    schoolWhere.schoolDistrict = { [Op.like]: `%${f.value}%` };
-                }
-            });
-        }
-
-        const chunkSize = 500;
-        let offset = 0;
-        let allResults = [];
-
-        while (true) {
-            // ✅ fetch batch
-            // const batch = await DispenseHistory.findAll({
-            //     where: whereClause,
-            //     order: [["createdAt", "DESC"]],
-            //     limit: chunkSize,
-            //     offset,
-            // });
-
-            const batch = await DispenseHistory.findAll({
-                where: whereClause,
-                order: [["createdAt", "DESC"]],
-                limit: chunkSize,
-                offset,
-            });
-
-            if (batch.length === 0) break;
-
-            // ✅ collect machineIds
-            const machineIds = batch.map((m) => m.machineId).filter(Boolean);
-
-            if (machineIds.length === 0) break;
-
-            // ✅ fetch schools in bulk
-            // const schools = await School.findAll({
-            //     where: { machineId: machineIds },
-            // });
-
-            const schools = await School.findAll({
-                where: {
-                    machineId: machineIds,
-                    ...schoolWhere,
-                },
-            });
-
-            const schoolMap = {};
-            schools.forEach((s) => {
-                schoolMap[s.machineId] = s.dataValues;
-            });
-
-            // ✅ attach school data
-            // batch.forEach((entry) => {
-            //     if (entry.machineId && schoolMap[entry.machineId]) {
-            //         entry.dataValues.school = schoolMap[entry.machineId];
-            //     }
-            // });
-
-
-            const filteredBatch = batch.filter(machine => {
-                if (machine.machineId && schoolMap[machine.machineId]) {
-                    machine.dataValues.school = schoolMap[machine.machineId];
-                    return true;
-                }
-                return Object.keys(schoolWhere).length === 0; // no filter → keep all
-            });
-
-            allResults = allResults.concat(filteredBatch);
-            offset += chunkSize;
-        }
-
-        if (allResults.length === 0) {
-            return res.status(404).send({
-                success: false,
-                message: "No refilling history records found for the given date range.",
-            });
-        }
-
-        return res.status(200).send({
-            success: true,
-            data: allResults,
-            total: allResults.length,
-        });
-    } catch (error) {
-        console.error("Error retrieving refilling history:", error);
-        return res.status(500).send({
-            success: false,
-            message: "Error retrieving refilling history",
-            error,
-        });
+    if (startDate && endDate) {
+      whereClause.createdAt = {
+        [Op.between]: [
+          dayjs(startDate).startOf("day").toDate(),
+          dayjs(endDate).endOf("day").toDate(),
+        ],
+      };
+    } else if (startDate) {
+      whereClause.createdAt = {
+        [Op.gte]: dayjs(startDate).startOf("day").toDate(),
+      };
+    } else if (endDate) {
+      whereClause.createdAt = {
+        [Op.lte]: dayjs(endDate).endOf("day").toDate(),
+      };
     }
+
+    const schoolFieldMap = {
+      schoolName: "schoolName",
+      schoolState: "state",
+      schoolDistrict: "schoolDistrict",
+      schoolBlock: "schoolBlock",
+      schoolSpocName: "schoolSpocName",
+      ngoSpocName: "ngoSpocName",
+    };
+
+    const refillFieldMap = {
+      id: "id",
+      machineId: "machineId",
+      stock: "stock",
+      createdAt: "createdAt",
+      event_type: "event_type",
+    };
+
+    const buildCondition = (value, operatorType) => {
+      switch (operatorType) {
+        case "equals":
+        case "is":
+          return { [Op.eq]: value };
+
+        case "startsWith":
+          return { [Op.like]: `${value}%` };
+
+        case "endsWith":
+          return { [Op.like]: `%${value}` };
+
+        case "not":
+          return { [Op.ne]: value };
+
+        case "contains":
+        default:
+          return { [Op.like]: `%${value}%` };
+      }
+    };
+
+    if (filters) {
+      const parsedFilters = JSON.parse(filters);
+
+      parsedFilters.forEach((f) => {
+        if (
+          !f?.field ||
+          f?.value === undefined ||
+          f?.value === null ||
+          f?.value === ""
+        ) {
+          return;
+        }
+
+        const rawValue = String(f.value).trim();
+        const operator = f.operator || "contains";
+
+        if (refillFieldMap[f.field]) {
+          whereClause[refillFieldMap[f.field]] = buildCondition(
+            rawValue,
+            operator
+          );
+        }
+
+        if (schoolFieldMap[f.field]) {
+          schoolWhere[schoolFieldMap[f.field]] = buildCondition(
+            rawValue,
+            operator
+          );
+        }
+      });
+    }
+
+    const results = await DispenseHistory.findAll({
+      where: whereClause,
+      include: [
+        {
+          model: School,
+          as: "school",
+          required: Object.keys(schoolWhere).length > 0,
+          where: Object.keys(schoolWhere).length > 0 ? schoolWhere : undefined,
+        },
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    return res.status(200).send({
+      success: true,
+      total: results.length,
+      data: results,
+    });
+  } catch (error) {
+    console.error("Refilling export error:", error);
+    return res.status(500).send({
+      success: false,
+      message: "Error retrieving refilling history export data",
+      error: error.message,
+    });
+  }
 };
+
 
 exports.getDispenseHistoryForMachineId = async (req, res) => {
     try {
